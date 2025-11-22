@@ -1,5 +1,5 @@
 run = "npm run dev"
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-20", "web", "postgresql-16"]
 
 [env]
 PORT = "3001"
@@ -28,3 +28,39 @@ PAPERINVEST_BASE_URL = "https://api.paperinvest.com"
 DEFAULT_VOLUME_THRESHOLD = "2.5"
 DEFAULT_PRICE_CHANGE_THRESHOLD = "1.5"
 MAX_POSITION_SIZE = "10000"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 4001
+externalPort = 3000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 37207
+externalPort = 3001

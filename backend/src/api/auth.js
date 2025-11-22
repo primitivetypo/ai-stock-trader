@@ -25,11 +25,11 @@ async function createDemoUser() {
 
     console.log('Demo user created: demo@demo.com / demo123 (database)');
   } catch (error) {
-    console.error('Failed to create demo user:', error);
+    console.error('Failed to create demo user:', error.message);
   }
 }
 
-createDemoUser();
+setTimeout(() => createDemoUser(), 1000);
 
 // Register
 router.post('/register', async (req, res) => {

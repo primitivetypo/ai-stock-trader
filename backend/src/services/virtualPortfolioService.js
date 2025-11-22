@@ -426,30 +426,34 @@ class VirtualPortfolioService extends EventEmitter {
 
   // Check pending limit orders and execute if price reached
   async checkPendingOrders() {
-    const result = await pool.query(
-      'SELECT DISTINCT user_id FROM orders WHERE status = $1 AND type = $2',
-      ['open', 'limit']
-    );
-
-    const userIds = result.rows.map(row => row.user_id);
-
-    for (const userId of userIds) {
-      const ordersResult = await pool.query(
-        'SELECT * FROM orders WHERE user_id = $1 AND status = $2 AND type = $3',
-        [userId, 'open', 'limit']
+    try {
+      const result = await pool.query(
+        'SELECT DISTINCT user_id FROM orders WHERE status = $1 AND type = $2',
+        ['open', 'limit']
       );
 
-      for (const order of ordersResult.rows) {
-        try {
-          const currentPrice = await this.getCurrentPrice(order.symbol);
+      const userIds = result.rows.map(row => row.user_id);
 
-          if (this.canExecuteLimit(order.side, currentPrice, parseFloat(order.limit_price))) {
-            await this.executeOrder(userId, order, parseFloat(order.limit_price));
+      for (const userId of userIds) {
+        const ordersResult = await pool.query(
+          'SELECT * FROM orders WHERE user_id = $1 AND status = $2 AND type = $3',
+          [userId, 'open', 'limit']
+        );
+
+        for (const order of ordersResult.rows) {
+          try {
+            const currentPrice = await this.getCurrentPrice(order.symbol);
+
+            if (this.canExecuteLimit(order.side, currentPrice, parseFloat(order.limit_price))) {
+              await this.executeOrder(userId, order, parseFloat(order.limit_price));
+            }
+          } catch (error) {
+            console.error('Failed to check pending order:', error);
           }
-        } catch (error) {
-          console.error('Failed to check pending order:', error);
         }
       }
+    } catch (error) {
+      console.error('Failed to check pending orders:', error.message);
     }
   }
 
