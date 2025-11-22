@@ -7,7 +7,9 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "PORT=4001 nodemon backend/server.js",
     "dev:frontend": "cd frontend && npm run dev",
-    "start": "node backend/server.js",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "node backend/server.js",
+    "start:frontend": "cd frontend && npm start",
     "build": "cd frontend && npm run build",
     "install:all": "npm install && cd frontend && npm install"
   },
