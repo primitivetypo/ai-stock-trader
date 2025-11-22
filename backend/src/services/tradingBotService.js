@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const pool = require('../db/database');
 
 /**
  * Trading Bot Service
@@ -9,8 +10,7 @@ class TradingBotService extends EventEmitter {
     super();
     this.virtualPortfolioService = virtualPortfolioService;
     this.alpacaService = alpacaService;
-    this.experiments = new Map(); // experimentId -> experiment data
-    this.bots = new Map(); // botId -> bot instance
+    this.activeIntervals = new Map(); // botId -> interval reference (not stored in DB)
     this.strategies = this.initializeStrategies();
   }
 
@@ -91,37 +91,48 @@ class TradingBotService extends EventEmitter {
       throw new Error(`Need ${botCount} strategies for ${botCount} bots`);
     }
 
-    const experiment = {
-      id: experimentId,
-      userId,
-      botCount,
-      startTime: new Date(),
-      endTime: duration ? new Date(Date.now() + duration) : null,
-      status: 'created',
-      bots: [],
-      watchlist: watchlist || ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL'],
-      results: []
-    };
+    const defaultWatchlist = watchlist || ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL'];
+
+    // Insert experiment into database
+    const result = await pool.query(
+      `INSERT INTO experiments (id, user_id, bot_count, status, watchlist, duration)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [experimentId, userId, botCount, 'created', JSON.stringify(defaultWatchlist), duration]
+    );
+
+    const experiment = result.rows[0];
 
     // Create bots for this experiment
+    const botIds = [];
     for (let i = 0; i < botCount; i++) {
       const strategyKey = selectedStrategies[i];
       const botId = `${experimentId}-bot-${i + 1}`;
 
-      const bot = await this.createBot(botId, userId, strategyKey, experiment.watchlist);
-      experiment.bots.push(bot.id);
+      await this.createBot(botId, experimentId, userId, strategyKey, defaultWatchlist);
+      botIds.push(botId);
     }
 
-    this.experiments.set(experimentId, experiment);
     console.log(`Created experiment ${experimentId} with ${botCount} bots`);
 
-    return experiment;
+    return {
+      id: experiment.id,
+      userId: experiment.user_id,
+      botCount: experiment.bot_count,
+      status: experiment.status,
+      watchlist: experiment.watchlist,
+      startTime: experiment.start_time,
+      endTime: experiment.end_time,
+      duration: experiment.duration,
+      createdAt: experiment.created_at,
+      bots: botIds
+    };
   }
 
   /**
    * Create individual bot with strategy
    */
-  async createBot(botId, userId, strategyKey, watchlist) {
+  async createBot(botId, experimentId, userId, strategyKey, watchlist) {
     const strategy = this.strategies[strategyKey];
     if (!strategy) {
       throw new Error(`Unknown strategy: ${strategyKey}`);
@@ -131,124 +142,201 @@ class TradingBotService extends EventEmitter {
     const botUserId = `${userId}-${botId}`;
     await this.virtualPortfolioService.createPortfolio(botUserId);
 
-    const bot = {
+    // Insert bot into database
+    await pool.query(
+      `INSERT INTO bots (id, experiment_id, user_id, strategy_key, strategy_name, config, watchlist, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [botId, experimentId, botUserId, strategyKey, strategy.name, JSON.stringify(strategy.config), JSON.stringify(watchlist), 'idle']
+    );
+
+    // Insert initial metrics
+    await pool.query(
+      `INSERT INTO bot_metrics (bot_id, total_trades, winning_trades, losing_trades, total_profit, current_equity)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [botId, 0, 0, 0, 0, 100000]
+    );
+
+    console.log(`Created bot ${botId} with ${strategy.name}`);
+
+    return {
       id: botId,
       userId: botUserId,
       strategyKey,
       strategy: strategy.name,
-      config: { ...strategy.config },
+      config: strategy.config,
       watchlist,
-      status: 'idle',
-      startTime: null,
-      stopTime: null,
-      trades: [],
-      metrics: {
-        totalTrades: 0,
-        winningTrades: 0,
-        losingTrades: 0,
-        totalProfit: 0,
-        currentEquity: 100000
-      },
-      positions: new Map(),
-      priceHistory: new Map(), // symbol -> price array
-      volumeHistory: new Map() // symbol -> volume array
+      status: 'idle'
     };
-
-    this.bots.set(botId, bot);
-    console.log(`Created bot ${botId} with ${strategy.name}`);
-
-    return bot;
   }
 
   /**
    * Start an experiment (all bots start trading)
    */
   async startExperiment(experimentId) {
-    const experiment = this.experiments.get(experimentId);
-    if (!experiment) {
+    // Update experiment status in database
+    const result = await pool.query(
+      `UPDATE experiments
+       SET status = $1, start_time = $2
+       WHERE id = $3
+       RETURNING *`,
+      ['running', new Date(), experimentId]
+    );
+
+    if (result.rows.length === 0) {
       throw new Error(`Experiment ${experimentId} not found`);
     }
 
-    experiment.status = 'running';
-    experiment.startTime = new Date();
+    const experiment = result.rows[0];
+
+    // Get all bots for this experiment
+    const botsResult = await pool.query(
+      `SELECT id FROM bots WHERE experiment_id = $1`,
+      [experimentId]
+    );
+
+    const botIds = botsResult.rows.map(row => row.id);
 
     // Start all bots
-    for (const botId of experiment.bots) {
+    for (const botId of botIds) {
       await this.startBot(botId);
     }
 
     console.log(`Started experiment ${experimentId}`);
-    this.emit('experimentStarted', experiment);
 
-    return experiment;
+    const experimentData = {
+      id: experiment.id,
+      userId: experiment.user_id,
+      botCount: experiment.bot_count,
+      status: experiment.status,
+      watchlist: experiment.watchlist,
+      startTime: experiment.start_time,
+      endTime: experiment.end_time,
+      duration: experiment.duration,
+      bots: botIds
+    };
+
+    this.emit('experimentStarted', experimentData);
+
+    return experimentData;
   }
 
   /**
    * Start individual bot
    */
   async startBot(botId) {
-    const bot = this.bots.get(botId);
-    if (!bot) {
+    // Update bot status in database
+    const result = await pool.query(
+      `UPDATE bots
+       SET status = $1, start_time = $2
+       WHERE id = $3
+       RETURNING strategy_name`,
+      ['running', new Date(), botId]
+    );
+
+    if (result.rows.length === 0) {
       throw new Error(`Bot ${botId} not found`);
     }
 
-    bot.status = 'running';
-    bot.startTime = new Date();
+    const strategyName = result.rows[0].strategy_name;
 
-    // Start bot trading loop
-    bot.interval = setInterval(() => {
+    // Start bot trading loop (stored in memory)
+    const interval = setInterval(() => {
       this.executeBotLogic(botId);
     }, 30000); // Run every 30 seconds
 
-    console.log(`Started bot ${botId} with ${bot.strategy}`);
+    this.activeIntervals.set(botId, interval);
+
+    console.log(`Started bot ${botId} with ${strategyName}`);
   }
 
   /**
    * Stop an experiment
    */
   async stopExperiment(experimentId) {
-    const experiment = this.experiments.get(experimentId);
-    if (!experiment) {
-      throw new Error(`Experiment ${experimentId} not found`);
-    }
+    // Get all bots for this experiment
+    const botsResult = await pool.query(
+      `SELECT id FROM bots WHERE experiment_id = $1`,
+      [experimentId]
+    );
 
-    experiment.status = 'stopped';
-    experiment.endTime = new Date();
+    const botIds = botsResult.rows.map(row => row.id);
 
     // Stop all bots
-    for (const botId of experiment.bots) {
+    for (const botId of botIds) {
       await this.stopBot(botId);
     }
 
+    // Update experiment status
+    const result = await pool.query(
+      `UPDATE experiments
+       SET status = $1, end_time = $2
+       WHERE id = $3
+       RETURNING *`,
+      ['stopped', new Date(), experimentId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error(`Experiment ${experimentId} not found`);
+    }
+
+    const experiment = result.rows[0];
+
     // Calculate final results
-    experiment.results = await this.calculateExperimentResults(experimentId);
+    const results = await this.calculateExperimentResults(experimentId);
 
     console.log(`Stopped experiment ${experimentId}`);
-    this.emit('experimentStopped', experiment);
 
-    return experiment;
+    const experimentData = {
+      id: experiment.id,
+      userId: experiment.user_id,
+      botCount: experiment.bot_count,
+      status: experiment.status,
+      watchlist: experiment.watchlist,
+      startTime: experiment.start_time,
+      endTime: experiment.end_time,
+      duration: experiment.duration,
+      bots: botIds,
+      results
+    };
+
+    this.emit('experimentStopped', experimentData);
+
+    return experimentData;
   }
 
   /**
    * Stop individual bot
    */
   async stopBot(botId) {
-    const bot = this.bots.get(botId);
-    if (!bot) {
+    // Get bot info for closing positions
+    const botResult = await pool.query(
+      `SELECT user_id FROM bots WHERE id = $1`,
+      [botId]
+    );
+
+    if (botResult.rows.length === 0) {
       throw new Error(`Bot ${botId} not found`);
     }
 
-    bot.status = 'stopped';
-    bot.stopTime = new Date();
+    const botUserId = botResult.rows[0].user_id;
 
-    // Clear interval
-    if (bot.interval) {
-      clearInterval(bot.interval);
-      bot.interval = null;
+    // Update bot status
+    await pool.query(
+      `UPDATE bots
+       SET status = $1, stop_time = $2
+       WHERE id = $3`,
+      ['stopped', new Date(), botId]
+    );
+
+    // Clear interval from memory
+    const interval = this.activeIntervals.get(botId);
+    if (interval) {
+      clearInterval(interval);
+      this.activeIntervals.delete(botId);
     }
 
     // Close all positions
-    await this.closeAllPositions(botId);
+    await this.closeAllPositions(botId, botUserId);
 
     console.log(`Stopped bot ${botId}`);
   }
@@ -257,10 +345,11 @@ class TradingBotService extends EventEmitter {
    * Main bot trading logic - executes based on strategy
    */
   async executeBotLogic(botId) {
-    const bot = this.bots.get(botId);
-    if (!bot || bot.status !== 'running') return;
-
     try {
+      // Get bot from database
+      const bot = await this.getBot(botId);
+      if (!bot || bot.status !== 'running') return;
+
       // Update market data for watchlist
       await this.updateMarketData(bot);
 
@@ -287,25 +376,43 @@ class TradingBotService extends EventEmitter {
         const quote = await this.alpacaService.getQuote(symbol);
         const bars = await this.alpacaService.getBars(symbol, '1Min', 100);
 
-        // Store price history
-        if (!bot.priceHistory.has(symbol)) {
-          bot.priceHistory.set(symbol, []);
-        }
-        bot.priceHistory.get(symbol).push(quote.ap);
-        if (bot.priceHistory.get(symbol).length > 100) {
-          bot.priceHistory.get(symbol).shift();
+        // Get existing price history from database
+        const historyResult = await pool.query(
+          `SELECT prices, volumes FROM price_history WHERE bot_id = $1 AND symbol = $2`,
+          [bot.id, symbol]
+        );
+
+        let prices = [];
+        let volumes = [];
+
+        if (historyResult.rows.length > 0) {
+          prices = historyResult.rows[0].prices || [];
+          volumes = historyResult.rows[0].volumes || [];
         }
 
-        // Store volume history
-        if (!bot.volumeHistory.has(symbol)) {
-          bot.volumeHistory.set(symbol, []);
+        // Add new price
+        prices.push(quote.ap);
+        if (prices.length > 100) {
+          prices.shift();
         }
+
+        // Add new volume
         if (bars.length > 0) {
-          bot.volumeHistory.get(symbol).push(bars[bars.length - 1].v);
-          if (bot.volumeHistory.get(symbol).length > 100) {
-            bot.volumeHistory.get(symbol).shift();
+          volumes.push(bars[bars.length - 1].v);
+          if (volumes.length > 100) {
+            volumes.shift();
           }
         }
+
+        // Update or insert price history
+        await pool.query(
+          `INSERT INTO price_history (bot_id, symbol, prices, volumes, updated_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (bot_id, symbol)
+           DO UPDATE SET prices = $3, volumes = $4, updated_at = $5`,
+          [bot.id, symbol, JSON.stringify(prices), JSON.stringify(volumes), new Date()]
+        );
+
       } catch (error) {
         console.error(`Failed to update market data for ${symbol}:`, error.message);
       }
@@ -330,6 +437,13 @@ class TradingBotService extends EventEmitter {
         let shouldSell = false;
         let reason = '';
 
+        // Get price history for this symbol
+        const historyResult = await pool.query(
+          `SELECT prices FROM price_history WHERE bot_id = $1 AND symbol = $2`,
+          [bot.id, symbol]
+        );
+        const priceHistory = historyResult.rows.length > 0 ? historyResult.rows[0].prices : [];
+
         // Strategy-specific exit logic
         switch (bot.strategyKey) {
           case 'volume-spike':
@@ -353,7 +467,7 @@ class TradingBotService extends EventEmitter {
             break;
 
           case 'mean-reversion':
-            const rsi = this.calculateRSI(bot.priceHistory.get(symbol), bot.config.rsiPeriod);
+            const rsi = this.calculateRSI(priceHistory, bot.config.rsiPeriod);
             if (rsi > bot.config.overboughtLevel || priceChange >= bot.config.profitTarget) {
               shouldSell = true;
               reason = 'Overbought or profit target';
@@ -374,7 +488,7 @@ class TradingBotService extends EventEmitter {
             break;
 
           case 'support-resistance':
-            const resistance = await this.calculateResistance(symbol, bot.priceHistory.get(symbol));
+            const resistance = await this.calculateResistance(symbol, priceHistory);
             if (currentPrice >= resistance * (1 - bot.config.resistanceTolerance)) {
               shouldSell = true;
               reason = 'Near resistance level';
@@ -406,8 +520,15 @@ class TradingBotService extends EventEmitter {
       try {
         const quote = await this.alpacaService.getQuote(symbol);
         const currentPrice = quote.ap;
-        const priceHistory = bot.priceHistory.get(symbol) || [];
-        const volumeHistory = bot.volumeHistory.get(symbol) || [];
+
+        // Get price and volume history from database
+        const historyResult = await pool.query(
+          `SELECT prices, volumes FROM price_history WHERE bot_id = $1 AND symbol = $2`,
+          [bot.id, symbol]
+        );
+
+        const priceHistory = historyResult.rows.length > 0 ? historyResult.rows[0].prices : [];
+        const volumeHistory = historyResult.rows.length > 0 ? historyResult.rows[0].volumes : [];
 
         if (priceHistory.length < 20) continue; // Need enough history
 
@@ -492,7 +613,14 @@ class TradingBotService extends EventEmitter {
         type: 'market'
       });
 
-      bot.trades.push({
+      // Store trade in database
+      await pool.query(
+        `INSERT INTO bot_trades (bot_id, time, symbol, side, qty, price, reason, order_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [bot.id, new Date(), symbol, 'buy', qty, currentPrice, reason, order.id]
+      );
+
+      const trade = {
         time: new Date(),
         symbol,
         side: 'buy',
@@ -500,10 +628,10 @@ class TradingBotService extends EventEmitter {
         price: currentPrice,
         reason,
         orderId: order.id
-      });
+      };
 
       console.log(`Bot ${bot.id} BUY: ${qty} ${symbol} @ $${currentPrice.toFixed(2)} - ${reason}`);
-      this.emit('botTrade', { botId: bot.id, trade: bot.trades[bot.trades.length - 1] });
+      this.emit('botTrade', { botId: bot.id, trade });
 
     } catch (error) {
       console.error(`Bot ${bot.id} failed to buy ${symbol}:`, error.message);
@@ -527,7 +655,15 @@ class TradingBotService extends EventEmitter {
       });
 
       const quote = await this.alpacaService.getQuote(symbol);
-      bot.trades.push({
+
+      // Store trade in database
+      await pool.query(
+        `INSERT INTO bot_trades (bot_id, time, symbol, side, qty, price, reason, order_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [bot.id, new Date(), symbol, 'sell', qty, quote.ap, reason, order.id]
+      );
+
+      const trade = {
         time: new Date(),
         symbol,
         side: 'sell',
@@ -535,10 +671,10 @@ class TradingBotService extends EventEmitter {
         price: quote.ap,
         reason,
         orderId: order.id
-      });
+      };
 
       console.log(`Bot ${bot.id} SELL: ${qty} ${symbol} @ $${quote.ap.toFixed(2)} - ${reason}`);
-      this.emit('botTrade', { botId: bot.id, trade: bot.trades[bot.trades.length - 1] });
+      this.emit('botTrade', { botId: bot.id, trade });
 
     } catch (error) {
       console.error(`Bot ${bot.id} failed to sell ${position.symbol}:`, error.message);
@@ -548,9 +684,11 @@ class TradingBotService extends EventEmitter {
   /**
    * Close all positions for a bot
    */
-  async closeAllPositions(botId) {
-    const bot = this.bots.get(botId);
-    const positions = await this.virtualPortfolioService.getPositions(bot.userId);
+  async closeAllPositions(botId, botUserId) {
+    const positions = await this.virtualPortfolioService.getPositions(botUserId);
+
+    // Get bot data for sellPosition
+    const bot = await this.getBot(botId);
 
     for (const position of positions) {
       await this.sellPosition(bot, position, 'Closing all positions');
@@ -563,27 +701,42 @@ class TradingBotService extends EventEmitter {
   async updateBotMetrics(bot) {
     try {
       const account = await this.virtualPortfolioService.getAccount(bot.userId);
-      bot.metrics.currentEquity = parseFloat(account.equity);
-      bot.metrics.totalProfit = bot.metrics.currentEquity - 100000;
+      const currentEquity = parseFloat(account.equity);
+      const totalProfit = currentEquity - 100000;
+
+      // Get all trades from database
+      const tradesResult = await pool.query(
+        `SELECT * FROM bot_trades WHERE bot_id = $1 ORDER BY time ASC`,
+        [bot.id]
+      );
+
+      const trades = tradesResult.rows;
+      const buyTrades = trades.filter(t => t.side === 'buy');
+      const sellTrades = trades.filter(t => t.side === 'sell');
 
       // Count wins/losses
       let wins = 0;
       let losses = 0;
-      const buyTrades = bot.trades.filter(t => t.side === 'buy');
-      const sellTrades = bot.trades.filter(t => t.side === 'sell');
 
       for (const sell of sellTrades) {
-        const buy = buyTrades.find(b => b.symbol === sell.symbol && b.time < sell.time);
+        const buy = buyTrades.find(b => b.symbol === sell.symbol && new Date(b.time) < new Date(sell.time));
         if (buy) {
-          const profit = (sell.price - buy.price) * sell.qty;
+          const profit = (parseFloat(sell.price) - parseFloat(buy.price)) * parseInt(sell.qty);
           if (profit > 0) wins++;
           else if (profit < 0) losses++;
         }
       }
 
-      bot.metrics.totalTrades = wins + losses;
-      bot.metrics.winningTrades = wins;
-      bot.metrics.losingTrades = losses;
+      const totalTrades = wins + losses;
+
+      // Update metrics in database
+      await pool.query(
+        `UPDATE bot_metrics
+         SET total_trades = $1, winning_trades = $2, losing_trades = $3,
+             total_profit = $4, current_equity = $5, updated_at = $6
+         WHERE bot_id = $7`,
+        [totalTrades, wins, losses, totalProfit, currentEquity, new Date(), bot.id]
+      );
 
     } catch (error) {
       console.error(`Failed to update metrics for bot ${bot.id}:`, error.message);
@@ -594,27 +747,29 @@ class TradingBotService extends EventEmitter {
    * Calculate experiment results
    */
   async calculateExperimentResults(experimentId) {
-    const experiment = this.experiments.get(experimentId);
-    const results = [];
+    // Get all bots for this experiment with their metrics
+    const result = await pool.query(
+      `SELECT b.id, b.strategy_name, m.total_trades, m.winning_trades,
+              m.losing_trades, m.total_profit, m.current_equity
+       FROM bots b
+       LEFT JOIN bot_metrics m ON b.id = m.bot_id
+       WHERE b.experiment_id = $1`,
+      [experimentId]
+    );
 
-    for (const botId of experiment.bots) {
-      const bot = this.bots.get(botId);
-      await this.updateBotMetrics(bot);
-
-      results.push({
-        botId: bot.id,
-        strategy: bot.strategy,
-        finalEquity: bot.metrics.currentEquity,
-        totalProfit: bot.metrics.totalProfit,
-        returnPercent: ((bot.metrics.currentEquity - 100000) / 100000) * 100,
-        totalTrades: bot.metrics.totalTrades,
-        winningTrades: bot.metrics.winningTrades,
-        losingTrades: bot.metrics.losingTrades,
-        winRate: bot.metrics.totalTrades > 0
-          ? (bot.metrics.winningTrades / bot.metrics.totalTrades) * 100
-          : 0
-      });
-    }
+    const results = result.rows.map(row => ({
+      botId: row.id,
+      strategy: row.strategy_name,
+      finalEquity: parseFloat(row.current_equity) || 100000,
+      totalProfit: parseFloat(row.total_profit) || 0,
+      returnPercent: ((parseFloat(row.current_equity || 100000) - 100000) / 100000) * 100,
+      totalTrades: parseInt(row.total_trades) || 0,
+      winningTrades: parseInt(row.winning_trades) || 0,
+      losingTrades: parseInt(row.losing_trades) || 0,
+      winRate: parseInt(row.total_trades) > 0
+        ? (parseInt(row.winning_trades) / parseInt(row.total_trades)) * 100
+        : 0
+    }));
 
     // Sort by profit
     results.sort((a, b) => b.totalProfit - a.totalProfit);
@@ -625,28 +780,114 @@ class TradingBotService extends EventEmitter {
   /**
    * Get experiment details
    */
-  getExperiment(experimentId) {
-    return this.experiments.get(experimentId);
+  async getExperiment(experimentId) {
+    const result = await pool.query(
+      `SELECT * FROM experiments WHERE id = $1`,
+      [experimentId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const exp = result.rows[0];
+
+    // Get bot IDs for this experiment
+    const botsResult = await pool.query(
+      `SELECT id FROM bots WHERE experiment_id = $1`,
+      [experimentId]
+    );
+
+    const botIds = botsResult.rows.map(row => row.id);
+
+    return {
+      id: exp.id,
+      userId: exp.user_id,
+      botCount: exp.bot_count,
+      status: exp.status,
+      watchlist: exp.watchlist,
+      startTime: exp.start_time,
+      endTime: exp.end_time,
+      duration: exp.duration,
+      createdAt: exp.created_at,
+      bots: botIds
+    };
   }
 
   /**
    * Get all experiments for a user
    */
-  getUserExperiments(userId) {
-    const userExperiments = [];
-    for (const [id, exp] of this.experiments.entries()) {
-      if (exp.userId === userId) {
-        userExperiments.push(exp);
-      }
+  async getUserExperiments(userId) {
+    const result = await pool.query(
+      `SELECT * FROM experiments WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    const experiments = [];
+    for (const exp of result.rows) {
+      // Get bot IDs for each experiment
+      const botsResult = await pool.query(
+        `SELECT id FROM bots WHERE experiment_id = $1`,
+        [exp.id]
+      );
+
+      const botIds = botsResult.rows.map(row => row.id);
+
+      experiments.push({
+        id: exp.id,
+        userId: exp.user_id,
+        botCount: exp.bot_count,
+        status: exp.status,
+        watchlist: exp.watchlist,
+        startTime: exp.start_time,
+        endTime: exp.end_time,
+        duration: exp.duration,
+        createdAt: exp.created_at,
+        bots: botIds
+      });
     }
-    return userExperiments;
+
+    return experiments;
   }
 
   /**
    * Get bot details
    */
-  getBot(botId) {
-    return this.bots.get(botId);
+  async getBot(botId) {
+    const result = await pool.query(
+      `SELECT b.*, m.total_trades, m.winning_trades, m.losing_trades,
+              m.total_profit, m.current_equity
+       FROM bots b
+       LEFT JOIN bot_metrics m ON b.id = m.bot_id
+       WHERE b.id = $1`,
+      [botId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const bot = result.rows[0];
+
+    return {
+      id: bot.id,
+      userId: bot.user_id,
+      experimentId: bot.experiment_id,
+      strategyKey: bot.strategy_key,
+      strategy: bot.strategy_name,
+      config: bot.config,
+      watchlist: bot.watchlist,
+      status: bot.status,
+      startTime: bot.start_time,
+      stopTime: bot.stop_time,
+      metrics: {
+        totalTrades: parseInt(bot.total_trades) || 0,
+        winningTrades: parseInt(bot.winning_trades) || 0,
+        losingTrades: parseInt(bot.losing_trades) || 0,
+        totalProfit: parseFloat(bot.total_profit) || 0,
+        currentEquity: parseFloat(bot.current_equity) || 100000
+      }
+    };
   }
 
   /**

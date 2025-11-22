@@ -45,7 +45,7 @@ router.post('/:experimentId/start', authenticateToken, async (req, res) => {
     const tradingBotService = req.app.locals.tradingBotService;
     const { experimentId } = req.params;
 
-    const experiment = tradingBotService.getExperiment(experimentId);
+    const experiment = await tradingBotService.getExperiment(experimentId);
     if (!experiment) {
       return res.status(404).json({ error: 'Experiment not found' });
     }
@@ -68,7 +68,7 @@ router.post('/:experimentId/stop', authenticateToken, async (req, res) => {
     const tradingBotService = req.app.locals.tradingBotService;
     const { experimentId } = req.params;
 
-    const experiment = tradingBotService.getExperiment(experimentId);
+    const experiment = await tradingBotService.getExperiment(experimentId);
     if (!experiment) {
       return res.status(404).json({ error: 'Experiment not found' });
     }
@@ -91,7 +91,7 @@ router.get('/:experimentId', authenticateToken, async (req, res) => {
     const tradingBotService = req.app.locals.tradingBotService;
     const { experimentId } = req.params;
 
-    const experiment = tradingBotService.getExperiment(experimentId);
+    const experiment = await tradingBotService.getExperiment(experimentId);
     if (!experiment) {
       return res.status(404).json({ error: 'Experiment not found' });
     }
@@ -101,8 +101,8 @@ router.get('/:experimentId', authenticateToken, async (req, res) => {
     }
 
     // Get bot details
-    const botsWithDetails = experiment.bots.map(botId => {
-      const bot = tradingBotService.getBot(botId);
+    const botsWithDetails = await Promise.all(experiment.bots.map(async botId => {
+      const bot = await tradingBotService.getBot(botId);
       return {
         id: bot.id,
         strategy: bot.strategy,
@@ -110,7 +110,7 @@ router.get('/:experimentId', authenticateToken, async (req, res) => {
         metrics: bot.metrics,
         trades: bot.trades
       };
-    });
+    }));
 
     res.json({
       ...experiment,
@@ -123,15 +123,15 @@ router.get('/:experimentId', authenticateToken, async (req, res) => {
 });
 
 // Get all experiments for user
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const tradingBotService = req.app.locals.tradingBotService;
-    const experiments = tradingBotService.getUserExperiments(req.user.userId);
+    const experiments = await tradingBotService.getUserExperiments(req.user.userId);
 
     // Add summary for each experiment
-    const experimentsWithSummary = experiments.map(exp => {
-      const bots = exp.bots.map(botId => {
-        const bot = tradingBotService.getBot(botId);
+    const experimentsWithSummary = await Promise.all(experiments.map(async exp => {
+      const bots = await Promise.all(exp.bots.map(async botId => {
+        const bot = await tradingBotService.getBot(botId);
         return {
           id: bot.id,
           strategy: bot.strategy,
@@ -139,13 +139,13 @@ router.get('/', authenticateToken, (req, res) => {
           currentEquity: bot.metrics.currentEquity,
           totalProfit: bot.metrics.totalProfit
         };
-      });
+      }));
 
       return {
         ...exp,
         bots
       };
-    });
+    }));
 
     res.json(experimentsWithSummary);
   } catch (error) {
@@ -155,24 +155,19 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // Get bot details
-router.get('/bot/:botId', authenticateToken, (req, res) => {
+router.get('/bot/:botId', authenticateToken, async (req, res) => {
   try {
     const tradingBotService = req.app.locals.tradingBotService;
     const { botId } = req.params;
 
-    const bot = tradingBotService.getBot(botId);
+    const bot = await tradingBotService.getBot(botId);
     if (!bot) {
       return res.status(404).json({ error: 'Bot not found' });
     }
 
     // Verify ownership through experiment
-    let authorized = false;
-    for (const [expId, exp] of tradingBotService.experiments.entries()) {
-      if (exp.userId === req.user.userId && exp.bots.includes(botId)) {
-        authorized = true;
-        break;
-      }
-    }
+    const experiments = await tradingBotService.getUserExperiments(req.user.userId);
+    const authorized = experiments.some(exp => exp.bots.includes(botId));
 
     if (!authorized) {
       return res.status(403).json({ error: 'Not authorized' });
@@ -202,7 +197,7 @@ router.get('/:experimentId/results', authenticateToken, async (req, res) => {
     const tradingBotService = req.app.locals.tradingBotService;
     const { experimentId } = req.params;
 
-    const experiment = tradingBotService.getExperiment(experimentId);
+    const experiment = await tradingBotService.getExperiment(experimentId);
     if (!experiment) {
       return res.status(404).json({ error: 'Experiment not found' });
     }

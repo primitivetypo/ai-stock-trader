@@ -134,63 +134,9 @@ class AlpacaService extends EventEmitter {
 
     symbols.forEach(symbol => this.subscribedSymbols.add(symbol));
 
-    try {
-      // Connect first before subscribing
-      await this.dataStream.connect();
-
-      // Subscribe to trades
-      this.dataStream.onStockTrade((trade) => {
-        if (this.subscribedSymbols.has(trade.Symbol)) {
-          callback({
-            type: 'trade',
-            symbol: trade.Symbol,
-            price: trade.Price,
-            size: trade.Size,
-            timestamp: trade.Timestamp
-          });
-        }
-      });
-
-      // Subscribe to quotes
-      this.dataStream.onStockQuote((quote) => {
-        if (this.subscribedSymbols.has(quote.Symbol)) {
-          callback({
-            type: 'quote',
-            symbol: quote.Symbol,
-            bidPrice: quote.BidPrice,
-            bidSize: quote.BidSize,
-            askPrice: quote.AskPrice,
-            askSize: quote.AskSize,
-            timestamp: quote.Timestamp
-          });
-        }
-      });
-
-      // Subscribe to bars
-      this.dataStream.onStockBar((bar) => {
-        if (this.subscribedSymbols.has(bar.Symbol)) {
-          callback({
-            type: 'bar',
-            symbol: bar.Symbol,
-            open: bar.OpenPrice,
-            high: bar.HighPrice,
-            low: bar.LowPrice,
-            close: bar.ClosePrice,
-            volume: bar.Volume,
-            timestamp: bar.Timestamp
-          });
-        }
-      });
-
-      // Subscribe after handlers are set up
-      this.dataStream.subscribeForTrades(symbols);
-      this.dataStream.subscribeForQuotes(symbols);
-      this.dataStream.subscribeForBars(symbols);
-
-      console.log('Subscribed to symbols:', symbols);
-    } catch (error) {
-      console.error('Failed to subscribe to symbols:', error);
-    }
+    // WebSocket subscriptions are disabled due to Alpaca SDK connection issues
+    // Use REST API snapshots instead for real-time data
+    console.log('WebSocket subscriptions disabled, use REST API for market data:', symbols);
   }
 
   async unsubscribeFromSymbols(symbols) {
@@ -199,11 +145,7 @@ class AlpacaService extends EventEmitter {
     }
 
     symbols.forEach(symbol => this.subscribedSymbols.delete(symbol));
-
-    this.dataStream.unsubscribeFromTrades(symbols);
-    this.dataStream.unsubscribeFromQuotes(symbols);
-    this.dataStream.unsubscribeFromBars(symbols);
-
+    // WebSocket disabled - no action needed
     console.log('Unsubscribed from symbols:', symbols);
   }
 
@@ -214,6 +156,51 @@ class AlpacaService extends EventEmitter {
 
     const snapshots = await this.alpaca.getSnapshots(symbols);
     return snapshots;
+  }
+
+  /**
+   * Get all tradable US stocks from Alpaca
+   * @returns {Promise<Array>} Array of assets with symbol, name, exchange
+   */
+  async getAllAssets() {
+    try {
+      const assets = await this.alpaca.getAssets({
+        status: 'active',
+        asset_class: 'us_equity'
+      });
+
+      // Filter to only tradable stocks and format response
+      return assets
+        .filter(asset => asset.tradable && asset.status === 'active')
+        .map(asset => ({
+          symbol: asset.symbol,
+          name: asset.name,
+          exchange: asset.exchange,
+          class: asset.class
+        }))
+        .sort((a, b) => a.symbol.localeCompare(b.symbol));
+    } catch (error) {
+      console.error('Failed to fetch assets from Alpaca:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search stocks by symbol or company name
+   * @param {string} query - Search query
+   * @param {number} limit - Maximum results to return
+   * @returns {Promise<Array>} Matching assets
+   */
+  async searchAssets(query, limit = 20) {
+    const allAssets = await this.getAllAssets();
+    const searchTerm = query.toLowerCase();
+
+    const results = allAssets.filter(asset =>
+      asset.symbol.toLowerCase().includes(searchTerm) ||
+      asset.name.toLowerCase().includes(searchTerm)
+    );
+
+    return results.slice(0, limit);
   }
 }
 

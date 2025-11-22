@@ -8,7 +8,7 @@ router.get('/orders', authenticateToken, async (req, res) => {
     const { status = 'all' } = req.query;
     const virtualPortfolioService = req.app.locals.virtualPortfolioService;
 
-    const orders = virtualPortfolioService.getOrders(req.user.userId, status);
+    const orders = await virtualPortfolioService.getOrders(req.user.userId, status);
 
     res.json(orders);
   } catch (error) {
@@ -35,7 +35,7 @@ router.post('/orders', authenticateToken, async (req, res) => {
 router.delete('/orders/:orderId', authenticateToken, async (req, res) => {
   try {
     const virtualPortfolioService = req.app.locals.virtualPortfolioService;
-    const order = virtualPortfolioService.cancelOrder(req.user.userId, req.params.orderId);
+    const order = await virtualPortfolioService.cancelOrder(req.user.userId, req.params.orderId);
 
     res.json(order);
   } catch (error) {

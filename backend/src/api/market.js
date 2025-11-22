@@ -114,4 +114,36 @@ router.get('/levels/:symbol', authenticateToken, (req, res) => {
   }
 });
 
+// Search stocks by symbol or company name
+router.get('/search', authenticateToken, async (req, res) => {
+  try {
+    const alpacaService = req.app.locals.alpacaService;
+    const { q, limit = 20 } = req.query;
+
+    if (!q || q.trim() === '') {
+      return res.status(400).json({ error: 'Search query required' });
+    }
+
+    const results = await alpacaService.searchAssets(q.trim(), parseInt(limit));
+
+    res.json(results);
+  } catch (error) {
+    console.error('Failed to search stocks:', error);
+    res.status(500).json({ error: 'Failed to search stocks' });
+  }
+});
+
+// Get all tradable US stocks
+router.get('/assets', authenticateToken, async (req, res) => {
+  try {
+    const alpacaService = req.app.locals.alpacaService;
+    const assets = await alpacaService.getAllAssets();
+
+    res.json(assets);
+  } catch (error) {
+    console.error('Failed to get assets:', error);
+    res.status(500).json({ error: 'Failed to fetch assets' });
+  }
+});
+
 module.exports = router;

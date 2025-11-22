@@ -1,34 +1,53 @@
 const EventEmitter = require('events');
+const pool = require('../db/database');
 
 class VirtualPortfolioService extends EventEmitter {
   constructor(alpacaService) {
     super();
     this.alpacaService = alpacaService;
-    this.portfolios = new Map(); // userId -> portfolio
-    this.orderIdCounter = 1;
   }
 
   // Initialize portfolio for new user
-  createPortfolio(userId) {
-    if (!this.portfolios.has(userId)) {
-      this.portfolios.set(userId, {
-        cash: 100000, // Starting virtual cash
-        positions: new Map(), // symbol -> {qty, avgPrice, currentPrice}
-        orders: [],
-        trades: [],
-        createdAt: new Date()
-      });
+  async createPortfolio(userId) {
+    const client = await pool.connect();
+    try {
+      // Check if portfolio already exists
+      const checkResult = await client.query(
+        'SELECT user_id FROM portfolios WHERE user_id = $1',
+        [userId]
+      );
+
+      if (checkResult.rows.length > 0) {
+        return await this.getPortfolio(userId);
+      }
+
+      // Create new portfolio
+      const result = await client.query(
+        `INSERT INTO portfolios (user_id, cash, last_equity, created_at, updated_at)
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING *`,
+        [userId, 100000.00, 100000.00]
+      );
+
       console.log(`Created virtual portfolio for user ${userId}`);
+      return result.rows[0];
+    } finally {
+      client.release();
     }
-    return this.portfolios.get(userId);
   }
 
   // Get user's portfolio
-  getPortfolio(userId) {
-    if (!this.portfolios.has(userId)) {
-      return this.createPortfolio(userId);
+  async getPortfolio(userId) {
+    const result = await pool.query(
+      'SELECT * FROM portfolios WHERE user_id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return await this.createPortfolio(userId);
     }
-    return this.portfolios.get(userId);
+
+    return result.rows[0];
   }
 
   // Get current market price from Alpaca
@@ -45,17 +64,20 @@ class VirtualPortfolioService extends EventEmitter {
 
   // Place virtual order
   async placeOrder(userId, orderData) {
-    const portfolio = this.getPortfolio(userId);
     const { symbol, qty, side, type, limit_price, time_in_force } = orderData;
+    const client = await pool.connect();
 
     try {
       // Get current market price
       const currentPrice = await this.getCurrentPrice(symbol);
       const executionPrice = type === 'limit' ? limit_price : currentPrice;
 
+      // Generate unique order ID
+      const orderId = `VIRT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
       // Create order object
       const order = {
-        id: `VIRT-${this.orderIdCounter++}`,
+        id: orderId,
         userId,
         symbol,
         qty,
@@ -75,13 +97,19 @@ class VirtualPortfolioService extends EventEmitter {
       } else {
         // Store as pending limit order
         order.status = 'open';
-        portfolio.orders.push(order);
+        await client.query(
+          `INSERT INTO orders (id, user_id, symbol, qty, side, type, time_in_force, limit_price, status, filled_qty, submitted_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [orderId, userId, symbol, qty, side, type, time_in_force || 'day', limit_price, 'open', 0, new Date()]
+        );
       }
 
       return order;
     } catch (error) {
       console.error('Failed to place virtual order:', error);
       throw error;
+    } finally {
+      client.release();
     }
   }
 
@@ -96,123 +124,242 @@ class VirtualPortfolioService extends EventEmitter {
 
   // Execute order
   async executeOrder(userId, order, price) {
-    const portfolio = this.getPortfolio(userId);
-    const { symbol, qty, side } = order;
+    const { symbol, qty, side, id: orderId } = order;
+    const client = await pool.connect();
 
-    if (side === 'buy') {
-      const cost = qty * price;
+    try {
+      await client.query('BEGIN');
 
-      // Check if user has enough cash
-      if (portfolio.cash < cost) {
-        order.status = 'rejected';
-        order.reject_reason = 'Insufficient funds';
-        return order;
+      // Get current portfolio
+      const portfolioResult = await client.query(
+        'SELECT * FROM portfolios WHERE user_id = $1 FOR UPDATE',
+        [userId]
+      );
+
+      if (portfolioResult.rows.length === 0) {
+        throw new Error('Portfolio not found');
       }
 
-      // Deduct cash
-      portfolio.cash -= cost;
+      const portfolio = portfolioResult.rows[0];
 
-      // Add to positions
-      if (!portfolio.positions.has(symbol)) {
-        portfolio.positions.set(symbol, {
-          symbol,
-          qty: 0,
-          avg_entry_price: 0,
-          market_value: 0,
-          unrealized_pl: 0,
-          unrealized_plpc: 0
-        });
+      if (side === 'buy') {
+        const cost = qty * price;
+
+        // Check if user has enough cash
+        if (parseFloat(portfolio.cash) < cost) {
+          order.status = 'rejected';
+          order.reject_reason = 'Insufficient funds';
+
+          // Insert rejected order
+          await client.query(
+            `INSERT INTO orders (id, user_id, symbol, qty, side, type, time_in_force, limit_price, status, filled_qty, submitted_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (id) DO UPDATE SET status = $9`,
+            [orderId, userId, symbol, qty, side, order.type, order.time_in_force, order.limit_price, 'rejected', 0, order.submitted_at]
+          );
+
+          await client.query('COMMIT');
+          return order;
+        }
+
+        // Deduct cash
+        await client.query(
+          'UPDATE portfolios SET cash = cash - $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+          [cost, userId]
+        );
+
+        // Get existing position if any
+        const positionResult = await client.query(
+          'SELECT * FROM positions WHERE user_id = $1 AND symbol = $2',
+          [userId, symbol]
+        );
+
+        if (positionResult.rows.length > 0) {
+          // Update existing position
+          const position = positionResult.rows[0];
+          const currentQty = parseInt(position.qty);
+          const totalQty = currentQty + qty;
+          const totalCost = (parseFloat(position.avg_entry_price) * currentQty) + (price * qty);
+          const newAvgPrice = totalCost / totalQty;
+
+          await client.query(
+            `UPDATE positions
+             SET qty = $1, avg_entry_price = $2, cost_basis = $3, updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $4 AND symbol = $5`,
+            [totalQty, newAvgPrice, totalQty * newAvgPrice, userId, symbol]
+          );
+        } else {
+          // Create new position
+          await client.query(
+            `INSERT INTO positions (user_id, symbol, qty, side, avg_entry_price, cost_basis, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            [userId, symbol, qty, 'long', price, qty * price]
+          );
+        }
+
+      } else if (side === 'sell') {
+        // Get existing position
+        const positionResult = await client.query(
+          'SELECT * FROM positions WHERE user_id = $1 AND symbol = $2',
+          [userId, symbol]
+        );
+
+        if (positionResult.rows.length === 0) {
+          order.status = 'rejected';
+          order.reject_reason = 'No position to sell';
+
+          await client.query(
+            `INSERT INTO orders (id, user_id, symbol, qty, side, type, time_in_force, limit_price, status, filled_qty, submitted_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (id) DO UPDATE SET status = $9`,
+            [orderId, userId, symbol, qty, side, order.type, order.time_in_force, order.limit_price, 'rejected', 0, order.submitted_at]
+          );
+
+          await client.query('COMMIT');
+          return order;
+        }
+
+        const position = positionResult.rows[0];
+        const currentQty = parseInt(position.qty);
+
+        if (currentQty < qty) {
+          order.status = 'rejected';
+          order.reject_reason = 'Insufficient shares';
+
+          await client.query(
+            `INSERT INTO orders (id, user_id, symbol, qty, side, type, time_in_force, limit_price, status, filled_qty, submitted_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (id) DO UPDATE SET status = $9`,
+            [orderId, userId, symbol, qty, side, order.type, order.time_in_force, order.limit_price, 'rejected', 0, order.submitted_at]
+          );
+
+          await client.query('COMMIT');
+          return order;
+        }
+
+        // Add cash from sale
+        const proceeds = qty * price;
+        await client.query(
+          'UPDATE portfolios SET cash = cash + $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+          [proceeds, userId]
+        );
+
+        // Update position
+        const newQty = currentQty - qty;
+        if (newQty === 0) {
+          // Remove position if qty is 0
+          await client.query(
+            'DELETE FROM positions WHERE user_id = $1 AND symbol = $2',
+            [userId, symbol]
+          );
+        } else {
+          await client.query(
+            'UPDATE positions SET qty = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND symbol = $3',
+            [newQty, userId, symbol]
+          );
+        }
       }
 
-      const position = portfolio.positions.get(symbol);
-      const totalQty = position.qty + qty;
-      const totalCost = (position.avg_entry_price * position.qty) + (price * qty);
-      position.avg_entry_price = totalCost / totalQty;
-      position.qty = totalQty;
+      // Mark order as filled
+      order.status = 'filled';
+      order.filled_qty = qty;
+      order.filled_avg_price = price;
+      order.filled_at = new Date();
 
-    } else if (side === 'sell') {
-      // Check if user has position
-      if (!portfolio.positions.has(symbol)) {
-        order.status = 'rejected';
-        order.reject_reason = 'No position to sell';
-        return order;
-      }
+      // Insert or update order as filled
+      await client.query(
+        `INSERT INTO orders (id, user_id, symbol, qty, side, type, time_in_force, limit_price, status, filled_qty, filled_avg_price, submitted_at, filled_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (id) DO UPDATE
+         SET status = $9, filled_qty = $10, filled_avg_price = $11, filled_at = $13`,
+        [orderId, userId, symbol, qty, side, order.type, order.time_in_force, order.limit_price, 'filled', qty, price, order.submitted_at, order.filled_at]
+      );
 
-      const position = portfolio.positions.get(symbol);
+      // Delete from open orders if it was there
+      await client.query(
+        'DELETE FROM orders WHERE id = $1 AND status = $2',
+        [orderId, 'open']
+      );
 
-      if (position.qty < qty) {
-        order.status = 'rejected';
-        order.reject_reason = 'Insufficient shares';
-        return order;
-      }
+      await client.query('COMMIT');
 
-      // Add cash from sale
-      const proceeds = qty * price;
-      portfolio.cash += proceeds;
+      console.log(`Executed virtual trade for user ${userId}: ${side} ${qty} ${symbol} @ $${price}`);
 
-      // Update position
-      position.qty -= qty;
+      // Emit event
+      this.emit('orderFilled', { userId, order });
 
-      // Remove position if qty is 0
-      if (position.qty === 0) {
-        portfolio.positions.delete(symbol);
-      }
+      return order;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    // Mark order as filled
-    order.status = 'filled';
-    order.filled_qty = qty;
-    order.filled_avg_price = price;
-    order.filled_at = new Date();
-
-    // Add to trades history
-    portfolio.trades.push({
-      ...order,
-      price
-    });
-
-    // Remove from pending orders
-    portfolio.orders = portfolio.orders.filter(o => o.id !== order.id);
-
-    console.log(`Executed virtual trade for user ${userId}: ${side} ${qty} ${symbol} @ $${price}`);
-
-    // Emit event
-    this.emit('orderFilled', { userId, order });
-
-    return order;
   }
 
   // Cancel order
-  cancelOrder(userId, orderId) {
-    const portfolio = this.getPortfolio(userId);
-    const orderIndex = portfolio.orders.findIndex(o => o.id === orderId);
+  async cancelOrder(userId, orderId) {
+    const client = await pool.connect();
+    try {
+      // Get the order
+      const orderResult = await client.query(
+        'SELECT * FROM orders WHERE id = $1 AND user_id = $2 AND status = $3',
+        [orderId, userId, 'open']
+      );
 
-    if (orderIndex === -1) {
-      throw new Error('Order not found');
+      if (orderResult.rows.length === 0) {
+        throw new Error('Order not found');
+      }
+
+      const order = orderResult.rows[0];
+
+      // Update order status to canceled
+      await client.query(
+        'UPDATE orders SET status = $1, cancelled_at = CURRENT_TIMESTAMP WHERE id = $2',
+        ['canceled', orderId]
+      );
+
+      order.status = 'canceled';
+      order.cancelled_at = new Date();
+
+      return order;
+    } finally {
+      client.release();
     }
-
-    const order = portfolio.orders[orderIndex];
-    order.status = 'canceled';
-    order.canceled_at = new Date();
-
-    portfolio.orders.splice(orderIndex, 1);
-
-    return order;
   }
 
   // Get user's positions
   async getPositions(userId) {
-    const portfolio = this.getPortfolio(userId);
-    const positions = Array.from(portfolio.positions.values());
+    const result = await pool.query(
+      'SELECT * FROM positions WHERE user_id = $1',
+      [userId]
+    );
+
+    const positions = result.rows;
 
     // Update current prices and P&L
     for (const position of positions) {
       try {
         const currentPrice = await this.getCurrentPrice(position.symbol);
+        const qty = parseInt(position.qty);
+        const avgEntryPrice = parseFloat(position.avg_entry_price);
+        const marketValue = qty * currentPrice;
+        const unrealizedPl = marketValue - (qty * avgEntryPrice);
+        const unrealizedPlpc = unrealizedPl / (qty * avgEntryPrice);
+
+        // Update position in database
+        await pool.query(
+          `UPDATE positions
+           SET current_price = $1, market_value = $2, unrealized_pl = $3, unrealized_plpc = $4, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $5 AND symbol = $6`,
+          [currentPrice, marketValue, unrealizedPl, unrealizedPlpc, userId, position.symbol]
+        );
+
+        // Update the position object for return
         position.current_price = currentPrice;
-        position.market_value = position.qty * currentPrice;
-        position.unrealized_pl = position.market_value - (position.qty * position.avg_entry_price);
-        position.unrealized_plpc = position.unrealized_pl / (position.qty * position.avg_entry_price);
+        position.market_value = marketValue;
+        position.unrealized_pl = unrealizedPl;
+        position.unrealized_plpc = unrealizedPlpc;
       } catch (error) {
         console.error(`Failed to update position for ${position.symbol}:`, error);
       }
@@ -222,60 +369,85 @@ class VirtualPortfolioService extends EventEmitter {
   }
 
   // Get user's orders
-  getOrders(userId, status = 'all') {
-    const portfolio = this.getPortfolio(userId);
+  async getOrders(userId, status = 'all') {
+    let query;
+    let params;
 
     if (status === 'all') {
-      return [...portfolio.orders, ...portfolio.trades];
+      query = 'SELECT * FROM orders WHERE user_id = $1 ORDER BY submitted_at DESC';
+      params = [userId];
     } else if (status === 'open') {
-      return portfolio.orders.filter(o => o.status === 'open');
+      query = 'SELECT * FROM orders WHERE user_id = $1 AND status = $2 ORDER BY submitted_at DESC';
+      params = [userId, 'open'];
     } else if (status === 'closed') {
-      return portfolio.trades;
+      query = 'SELECT * FROM orders WHERE user_id = $1 AND status IN ($2, $3, $4) ORDER BY submitted_at DESC';
+      params = [userId, 'filled', 'canceled', 'rejected'];
+    } else {
+      query = 'SELECT * FROM orders WHERE user_id = $1 AND status = $2 ORDER BY submitted_at DESC';
+      params = [userId, status];
     }
 
-    return portfolio.orders.filter(o => o.status === status);
+    const result = await pool.query(query, params);
+    return result.rows;
   }
 
   // Get account summary
   async getAccount(userId) {
-    const portfolio = this.getPortfolio(userId);
+    const portfolio = await this.getPortfolio(userId);
     const positions = await this.getPositions(userId);
 
-    const portfolioValue = positions.reduce((sum, p) => sum + p.market_value, 0);
-    const equity = portfolio.cash + portfolioValue;
-    const lastEquity = 100000; // Starting amount (should track daily)
+    const portfolioValue = positions.reduce((sum, p) => sum + parseFloat(p.market_value || 0), 0);
+    const cash = parseFloat(portfolio.cash);
+    const equity = cash + portfolioValue;
+    const lastEquity = parseFloat(portfolio.last_equity || 100000);
 
     return {
       account_number: `VIRT-${userId}`,
       status: 'ACTIVE',
       currency: 'USD',
-      cash: portfolio.cash.toFixed(2),
+      cash: cash.toFixed(2),
       portfolio_value: portfolioValue.toFixed(2),
       equity: equity.toFixed(2),
       last_equity: lastEquity.toFixed(2),
-      buying_power: (portfolio.cash * 2).toFixed(2), // 2x for margin
+      buying_power: (cash * 2).toFixed(2), // 2x for margin
       pattern_day_trader: false,
       trading_blocked: false,
       transfers_blocked: false,
       account_blocked: false,
-      created_at: portfolio.createdAt
+      created_at: portfolio.created_at
     };
+  }
+
+  // Update position prices without re-fetching
+  async updatePositionPrices(userId) {
+    const positions = await this.getPositions(userId);
+    return positions;
   }
 
   // Check pending limit orders and execute if price reached
   async checkPendingOrders() {
-    for (const [userId, portfolio] of this.portfolios) {
-      for (const order of portfolio.orders) {
-        if (order.status === 'open' && order.type === 'limit') {
-          try {
-            const currentPrice = await this.getCurrentPrice(order.symbol);
+    const result = await pool.query(
+      'SELECT DISTINCT user_id FROM orders WHERE status = $1 AND type = $2',
+      ['open', 'limit']
+    );
 
-            if (this.canExecuteLimit(order.side, currentPrice, order.limit_price)) {
-              await this.executeOrder(userId, order, order.limit_price);
-            }
-          } catch (error) {
-            console.error('Failed to check pending order:', error);
+    const userIds = result.rows.map(row => row.user_id);
+
+    for (const userId of userIds) {
+      const ordersResult = await pool.query(
+        'SELECT * FROM orders WHERE user_id = $1 AND status = $2 AND type = $3',
+        [userId, 'open', 'limit']
+      );
+
+      for (const order of ordersResult.rows) {
+        try {
+          const currentPrice = await this.getCurrentPrice(order.symbol);
+
+          if (this.canExecuteLimit(order.side, currentPrice, parseFloat(order.limit_price))) {
+            await this.executeOrder(userId, order, parseFloat(order.limit_price));
           }
+        } catch (error) {
+          console.error('Failed to check pending order:', error);
         }
       }
     }
@@ -283,17 +455,25 @@ class VirtualPortfolioService extends EventEmitter {
 
   // Get all portfolios (for admin/leaderboard)
   async getAllPortfolios() {
+    const portfoliosResult = await pool.query(
+      'SELECT user_id FROM portfolios'
+    );
+
     const results = [];
 
-    for (const [userId, portfolio] of this.portfolios) {
-      const account = await this.getAccount(userId);
-      results.push({
-        userId,
-        equity: parseFloat(account.equity),
-        cash: parseFloat(account.cash),
-        portfolioValue: parseFloat(account.portfolio_value),
-        return: ((parseFloat(account.equity) - 100000) / 100000) * 100
-      });
+    for (const row of portfoliosResult.rows) {
+      try {
+        const account = await this.getAccount(row.user_id);
+        results.push({
+          userId: row.user_id,
+          equity: parseFloat(account.equity),
+          cash: parseFloat(account.cash),
+          portfolioValue: parseFloat(account.portfolio_value),
+          return: ((parseFloat(account.equity) - 100000) / 100000) * 100
+        });
+      } catch (error) {
+        console.error(`Failed to get account for user ${row.user_id}:`, error);
+      }
     }
 
     // Sort by return

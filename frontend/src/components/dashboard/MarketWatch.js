@@ -48,7 +48,32 @@ export default function MarketWatch() {
   const loadWatchlist = async () => {
     try {
       const response = await api.get('/api/market/watchlist');
-      setWatchlist(response.data);
+      const symbols = response.data;
+      setWatchlist(symbols);
+
+      // Load initial snapshot prices for all symbols
+      if (symbols.length > 0) {
+        try {
+          const snapshotsRes = await api.post('/api/market/snapshots', { symbols });
+          const newQuotes = {};
+
+          Object.entries(snapshotsRes.data).forEach(([symbol, snapshot]) => {
+            if (snapshot && snapshot.latestQuote) {
+              const quote = snapshot.latestQuote;
+              newQuotes[symbol] = {
+                bidPrice: quote.bp || quote.BidPrice || 0,
+                askPrice: quote.ap || quote.AskPrice || 0,
+                spread: (quote.ap || quote.AskPrice || 0) - (quote.bp || quote.BidPrice || 0),
+                timestamp: quote.t || quote.Timestamp
+              };
+            }
+          });
+
+          setQuotes(newQuotes);
+        } catch (snapError) {
+          console.error('Failed to load snapshots:', snapError);
+        }
+      }
     } catch (error) {
       console.error('Failed to load watchlist:', error);
     }

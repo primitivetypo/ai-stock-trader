@@ -10,7 +10,7 @@ router.get('/performance', authenticateToken, async (req, res) => {
 
     const account = await virtualPortfolioService.getAccount(req.user.userId);
     const positions = await virtualPortfolioService.getPositions(req.user.userId);
-    const orders = virtualPortfolioService.getOrders(req.user.userId, 'all');
+    const orders = await virtualPortfolioService.getOrders(req.user.userId, 'all');
 
     // Calculate metrics
     const equity = parseFloat(account.equity);
@@ -59,7 +59,7 @@ router.get('/history', authenticateToken, async (req, res) => {
     const virtualPortfolioService = req.app.locals.virtualPortfolioService;
     const { limit = 50 } = req.query;
 
-    const orders = virtualPortfolioService.getOrders(req.user.userId, 'closed');
+    const orders = await virtualPortfolioService.getOrders(req.user.userId, 'closed');
 
     // Sort by date and limit
     const history = orders
@@ -77,7 +77,7 @@ router.get('/history', authenticateToken, async (req, res) => {
 router.get('/statistics', authenticateToken, async (req, res) => {
   try {
     const virtualPortfolioService = req.app.locals.virtualPortfolioService;
-    const orders = virtualPortfolioService.getOrders(req.user.userId, 'closed');
+    const orders = await virtualPortfolioService.getOrders(req.user.userId, 'closed');
 
     const filledOrders = orders.filter(o => o.status === 'filled');
 
