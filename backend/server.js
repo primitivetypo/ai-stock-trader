@@ -125,9 +125,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4001;
+const HOST = 'localhost'; // Backend should bind to localhost
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
 
   // Initialize services
