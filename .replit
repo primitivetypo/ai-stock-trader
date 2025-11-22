@@ -1,11 +1,15 @@
 run = "npm run dev"
+modules = ["nodejs-20", "web"]
 
 [env]
 PORT = "3001"
 
 [nix]
-channel = "stable-22_11"
+channel = "stable-25_05"
 
 [deployment]
 run = ["sh", "-c", "npm start"]
 deploymentTarget = "cloudrun"
+
+[agent]
+expertMode = true
