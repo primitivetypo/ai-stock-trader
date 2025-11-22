@@ -13,3 +13,18 @@ deploymentTarget = "cloudrun"
 
 [agent]
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+NODE_ENV = "development"
+PORT = "4001"
+NEXT_PUBLIC_API_URL = "http://localhost:4001"
+NEXT_PUBLIC_WS_URL = "http://localhost:4001"
+FRONTEND_URL = "https://83f3f323-72b7-4d0f-b6cf-54c211b7dcc6-00-2d2snhyqys9eh.kirk.replit.dev"
+ALPACA_BASE_URL = "https://paper-api.alpaca.markets"
+ALPACA_DATA_URL = "https://data.alpaca.markets"
+PAPERINVEST_BASE_URL = "https://api.paperinvest.com"
+DEFAULT_VOLUME_THRESHOLD = "2.5"
+DEFAULT_PRICE_CHANGE_THRESHOLD = "1.5"
+MAX_POSITION_SIZE = "10000"
