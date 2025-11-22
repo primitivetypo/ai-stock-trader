@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { TrendingUp, Bot, BarChart3, Shield, Zap, Target } from 'lucide-react';
+import { TrendingUp, Bot, BarChart3, Shield, Zap, Target, Sparkles } from 'lucide-react';
 import Login from '@/components/auth/Login';
 
 export default function Home() {
@@ -124,13 +124,6 @@ export default function Home() {
   );
 }
 
-function Sparkles({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-    </svg>
-  );
-}
 
 function FeatureCard({ icon, title, description, gradient }) {
   return (

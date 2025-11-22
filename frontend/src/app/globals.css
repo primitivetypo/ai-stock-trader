@@ -28,11 +28,8 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
   body {
-    @apply bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40 text-foreground;
+    @apply bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40 text-slate-900;
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

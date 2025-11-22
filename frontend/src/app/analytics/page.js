@@ -1,6 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { 
+  BarChart3, 
+  Target, 
+  DollarSign, 
+  TrendingUp, 
+  TrendingDown,
+  Activity,
+  Package,
+  FileText
+} from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import api from '@/lib/api';
 
@@ -33,7 +43,10 @@ export default function Analytics() {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-96">
-          <div className="text-white text-xl">Loading...</div>
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+            <p className="text-slate-600 font-medium">Loading analytics...</p>
+          </div>
         </div>
       </DashboardLayout>
     );
@@ -43,53 +56,61 @@ export default function Analytics() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-white">Analytics</h1>
-          <p className="text-slate-400 mt-1">Performance metrics and statistics</p>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Analytics</h1>
+          <p className="text-slate-600 mt-1">
+            Performance metrics and trading statistics
+          </p>
         </div>
 
-        {/* Statistics Cards */}
         {statistics && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard
               title="Total Trades"
               value={statistics.totalTrades}
-              icon="📊"
+              icon={BarChart3}
+              gradient="from-blue-500 to-cyan-500"
             />
             <StatCard
               title="Win Rate"
               value={`${statistics.winRate.toFixed(1)}%`}
               subtitle={`${statistics.wins}W / ${statistics.losses}L`}
-              icon="🎯"
-              color={statistics.winRate >= 50 ? 'green' : 'red'}
+              icon={Target}
+              gradient="from-emerald-500 to-teal-500"
+              isPositive={statistics.winRate >= 50}
             />
             <StatCard
               title="Total P&L"
               value={`$${statistics.totalProfit.toFixed(2)}`}
-              icon="💰"
-              color={statistics.totalProfit >= 0 ? 'green' : 'red'}
+              icon={DollarSign}
+              gradient="from-indigo-500 to-purple-500"
+              isPositive={statistics.totalProfit >= 0}
             />
             <StatCard
               title="Avg P&L/Trade"
               value={`$${statistics.avgProfitPerTrade.toFixed(2)}`}
-              icon="📈"
-              color={statistics.avgProfitPerTrade >= 0 ? 'green' : 'red'}
+              icon={statistics.avgProfitPerTrade >= 0 ? TrendingUp : TrendingDown}
+              gradient="from-amber-500 to-orange-500"
+              isPositive={statistics.avgProfitPerTrade >= 0}
             />
           </div>
         )}
 
-        {/* Performance Details */}
         {performance && (
-          <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-lg border border-slate-700">
-            <h2 className="text-xl font-bold text-white mb-4">
-              Performance Details
-            </h2>
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 shadow-lg">
+                <Activity className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900">Performance Details</h2>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <h3 className="text-lg font-semibold text-slate-300 mb-3">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-blue-600" />
                   Account Status
                 </h3>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <DetailRow
                     label="Equity"
                     value={`$${performance.account.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -106,17 +127,20 @@ export default function Analytics() {
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-slate-300 mb-3">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-emerald-600" />
                   Trading Activity
                 </h3>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <DetailRow
                     label="Open Positions"
                     value={performance.positions.count}
+                    icon={Package}
                   />
                   <DetailRow
                     label="Total Orders"
                     value={performance.orders.total}
+                    icon={FileText}
                   />
                   <DetailRow
                     label="Open Orders"
@@ -132,26 +156,40 @@ export default function Analytics() {
           </div>
         )}
 
-        {/* Simulation Metrics */}
         {performance?.simulation && (
-          <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-lg border border-slate-700">
-            <h2 className="text-xl font-bold text-white mb-4">
-              Simulation Metrics
-            </h2>
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg">
+                <BarChart3 className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900">Simulation Metrics</h2>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <DetailRow
-                label="Total Simulated Trades"
-                value={performance.simulation.totalTrades || 0}
-              />
-              <DetailRow
-                label="Filled Trades"
-                value={performance.simulation.filledTrades || 0}
-              />
-              <DetailRow
-                label="Avg Slippage"
-                value={`${((performance.simulation.avgSlippage || 0) * 100).toFixed(3)}%`}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="p-5 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
+                <div className="text-sm font-semibold text-slate-700 mb-2">
+                  Total Simulated Trades
+                </div>
+                <div className="text-3xl font-bold text-slate-900">
+                  {performance.simulation.totalTrades || 0}
+                </div>
+              </div>
+              <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100">
+                <div className="text-sm font-semibold text-slate-700 mb-2">
+                  Filled Trades
+                </div>
+                <div className="text-3xl font-bold text-slate-900">
+                  {performance.simulation.filledTrades || 0}
+                </div>
+              </div>
+              <div className="p-5 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100">
+                <div className="text-sm font-semibold text-slate-700 mb-2">
+                  Avg Slippage
+                </div>
+                <div className="text-3xl font-bold text-slate-900">
+                  {((performance.simulation.avgSlippage || 0) * 100).toFixed(3)}%
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -160,32 +198,33 @@ export default function Analytics() {
   );
 }
 
-function StatCard({ title, value, subtitle, icon, color = 'blue' }) {
-  const colorClasses = {
-    green: 'text-green-400',
-    red: 'text-red-400',
-    blue: 'text-primary-400'
-  };
-
+function StatCard({ title, value, subtitle, icon: Icon, gradient, isPositive }) {
   return (
-    <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-lg border border-slate-700">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-slate-400 text-sm">{title}</span>
-        <span className="text-2xl">{icon}</span>
+    <div className="stats-card group">
+      <div className="flex items-center justify-between mb-3">
+        <span className="stats-label">{title}</span>
+        <div className={`p-2.5 rounded-xl bg-gradient-to-br ${gradient} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+          <Icon className="w-5 h-5 text-white" />
+        </div>
       </div>
-      <div className={`text-2xl font-bold ${colorClasses[color]} mb-1`}>
+      <div className={`stats-value mb-2 ${isPositive !== undefined ? (isPositive ? 'text-emerald-600' : 'text-rose-600') : ''}`}>
         {value}
       </div>
-      {subtitle && <div className="text-sm text-slate-400">{subtitle}</div>}
+      {subtitle && (
+        <div className="text-sm text-slate-600 font-medium">{subtitle}</div>
+      )}
     </div>
   );
 }
 
-function DetailRow({ label, value }) {
+function DetailRow({ label, value, icon: Icon }) {
   return (
-    <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-      <span className="text-slate-400">{label}</span>
-      <span className="text-white font-medium">{value}</span>
+    <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-white/60 hover:bg-white transition-colors">
+      <div className="flex items-center gap-2">
+        {Icon && <Icon className="w-4 h-4 text-slate-500" />}
+        <span className="text-slate-700 font-medium">{label}</span>
+      </div>
+      <span className="text-slate-900 font-bold">{value}</span>
     </div>
   );
 }
