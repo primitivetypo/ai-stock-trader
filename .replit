@@ -8,8 +8,9 @@ PORT = "3001"
 channel = "stable-25_05"
 
 [deployment]
-run = ["sh", "-c", "npm start"]
-deploymentTarget = "cloudrun"
+run = ["npm", "run", "dev"]
+deploymentTarget = "autoscale"
+build = ["npm", "run", "build"]
 
 [agent]
 expertMode = true
