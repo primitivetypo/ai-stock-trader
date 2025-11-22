@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { FlaskConical, RefreshCw } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import AccountSummary from '@/components/dashboard/AccountSummary';
 import MarketWatch from '@/components/dashboard/MarketWatch';
@@ -18,6 +19,7 @@ export default function Dashboard() {
   const [performance, setPerformance] = useState(null);
   const [volumeAlerts, setVolumeAlerts] = useState([]);
   const [recentTrades, setRecentTrades] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -28,7 +30,6 @@ export default function Dashboard() {
 
     loadDashboardData();
 
-    // Connect to WebSocket
     const socket = connectSocket();
 
     socket.on('connect', () => {
@@ -41,7 +42,7 @@ export default function Dashboard() {
 
     socket.on('tradeExecuted', (trade) => {
       setRecentTrades((prev) => [trade, ...prev].slice(0, 10));
-      loadDashboardData(); // Refresh account data
+      loadDashboardData();
     });
 
     return () => {
@@ -64,14 +65,23 @@ export default function Dashboard() {
       console.error('Failed to load dashboard data:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadDashboardData();
   };
 
   if (loading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-96">
-          <div className="text-white text-xl">Loading...</div>
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+            <p className="text-slate-600 font-medium">Loading dashboard...</p>
+          </div>
         </div>
       </DashboardLayout>
     );
@@ -81,22 +91,30 @@ export default function Dashboard() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-            <p className="text-slate-400 mt-1">
+            <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Dashboard</h1>
+            <p className="text-slate-600 mt-1">
               Real-time market monitoring and trading overview
             </p>
           </div>
-          <button
-            onClick={() => router.push('/experiments')}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-            </svg>
-            Trading Experiments
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              onClick={() => router.push('/experiments')}
+              className="btn-primary flex items-center gap-2"
+            >
+              <FlaskConical className="w-5 h-5" />
+              <span className="hidden sm:inline">Trading</span> Experiments
+            </button>
+          </div>
         </div>
 
         {/* Account Summary */}
@@ -104,10 +122,7 @@ export default function Dashboard() {
 
         {/* Main Grid */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Volume Alerts */}
           <VolumeAlerts alerts={volumeAlerts} />
-
-          {/* Market Watch */}
           <MarketWatch />
         </div>
 
