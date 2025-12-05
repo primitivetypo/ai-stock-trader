@@ -1,207 +1,329 @@
-# Quick Start Guide
+# 🚀 Quick Start Guide - AI Stock Trader
 
-Get your AI Stock Trader up and running in 5 minutes!
+## Prerequisites
+- Node.js 16+ installed
+- PostgreSQL installed
+- Redis installed (or use Docker)
+- Alpaca API keys
+- Gemini API key
 
-## 🚀 Fastest Path to Running
+## Option 1: Run with Docker (Recommended)
 
-### 1. Get Alpaca API Keys (2 minutes)
-
-1. Go to https://alpaca.markets
-2. Sign up (free, no credit card needed)
-3. Navigate to "Paper Trading" → "Your API Keys"
-4. Copy your API Key and Secret Key
-
-### 2. Setup Project (1 minute)
-
+### 1. Setup Environment
 ```bash
-# Install all dependencies
-npm run install:all
-```
-
-### 3. Configure Environment (1 minute)
-
-Create `.env` file:
-
-```bash
+# Copy environment template
 cp .env.example .env
+
+# Edit .env with your API keys
+nano .env
 ```
 
-Edit `.env` and add your Alpaca keys:
-
-```env
-ALPACA_API_KEY=your_key_here
-ALPACA_SECRET_KEY=your_secret_here
-JWT_SECRET=any_random_string_here
-```
-
-### 4. Run Application (1 minute)
-
+### 2. Start All Services
 ```bash
+# Start PostgreSQL, Redis, Backend, and Frontend
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+```
+
+### 3. Access Application
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:4001
+- Redis: localhost:6379
+
+---
+
+## Option 2: Run Locally (Development)
+
+### 1. Install Redis
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# Ubuntu/Debian
+sudo apt update
+sudo apt install redis-server
+sudo systemctl start redis
+
+# Verify Redis is running
+redis-cli ping  # Should return PONG
+```
+
+### 2. Install PostgreSQL
+```bash
+# macOS
+brew install postgresql@15
+brew services start postgresql@15
+
+# Ubuntu/Debian
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+
+# Create database
+psql postgres
+CREATE DATABASE trading_db;
+CREATE USER trading_user WITH PASSWORD 'trading_password';
+GRANT ALL PRIVILEGES ON DATABASE trading_db TO trading_user;
+\q
+```
+
+### 3. Setup Backend
+```bash
+cd backend
+
+# Install dependencies
+npm install
+
+# Copy environment file
+cp ../.env.example .env
+
+# Edit with your keys
+nano .env
+
+# Run database migrations
+psql -U trading_user -d trading_db -f src/db/schema.sql
+psql -U trading_user -d trading_db -f src/db/migrations/001_add_ai_trading_tables.sql
+psql -U trading_user -d trading_db -f src/db/migrations/002_add_portfolio_allocation.sql
+
+# Start backend
 npm run dev
 ```
 
-Visit: http://localhost:3000
+### 4. Setup Frontend
+```bash
+# In a new terminal
+cd frontend
 
-## ✅ First Steps
+# Install dependencies
+npm install
 
-### 1. Create Account
-- Click "Create Account" on home page
-- Enter email and password
-- Click "Create Account"
-
-### 2. Explore Dashboard
-- View your $100,000 paper trading account
-- See real-time market data
-- Monitor volume alerts
-
-### 3. Add Symbols to Watch
-- Go to "Watchlist" page
-- Add symbols like: AAPL, TSLA, MSFT, GOOGL
-- View support/resistance levels
-
-### 4. Place Your First Trade
-- Go to "Trading" page
-- Enter symbol (e.g., AAPL)
-- Set quantity (e.g., 10)
-- Select "Buy" and "Market"
-- Click "Place Buy Order"
-
-### 5. Monitor Performance
-- Go to "Analytics" page
-- View win rate and P&L
-- Track trading statistics
-
-## 📱 Deploy to Replit (5 minutes)
-
-### Quick Deploy
-
-1. Go to https://replit.com
-2. Click "+ Create Repl"
-3. Choose "Import from GitHub" or upload files
-4. Click "Secrets" and add:
-   - `ALPACA_API_KEY`
-   - `ALPACA_SECRET_KEY`
-   - `JWT_SECRET`
-5. Click "Run"
-
-Done! Your app is live on the web.
-
-## 🎯 Key Features to Try
-
-### Automated Trading
-- Add symbols to watchlist
-- System monitors for volume spikes
-- Auto-trades near support/resistance
-- View trades in dashboard
-
-### Manual Trading
-- Trading page → Place orders
-- Market or Limit orders
-- Track positions in real-time
-- Cancel open orders
-
-### Performance Tracking
-- Analytics page → View statistics
-- Win rate and P&L
-- Trading history
-- Performance charts
-
-## 🔍 Understanding Volume Detection
-
-The system detects abnormal volume by:
-
-1. **Collecting Data**: Monitors 1-minute bars
-2. **Statistical Analysis**: Calculates average volume
-3. **Z-Score**: Measures deviation from normal
-4. **Alert**: Triggers when Z-score > 2.5
-5. **Trade**: Executes if near support/resistance
-
-## 💡 Pro Tips
-
-### 1. Start Small
-- Begin with 1-2 symbols
-- Use small position sizes
-- Monitor closely for first few days
-
-### 2. Customize Settings
-In `.env`, adjust:
-```env
-DEFAULT_VOLUME_THRESHOLD=2.5      # Higher = fewer alerts
-MAX_POSITION_SIZE=10000           # Lower = less risk
+# Start frontend
+npm run dev
 ```
 
-### 3. Best Symbols
-Good for testing:
-- **High Volume**: SPY, QQQ, AAPL
-- **Volatile**: TSLA, NVDA, META
-- **Stable**: MSFT, GOOGL, AMZN
+### 5. Access Application
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:4001
 
-### 4. Market Hours
-- Trading: 9:30 AM - 4:00 PM ET (Mon-Fri)
-- Pre-market: 4:00 AM - 9:30 AM ET
-- After-hours: 4:00 PM - 8:00 PM ET
+---
 
-### 5. Paper Trading Tips
-- Treat it like real money
-- Test strategies thoroughly
-- Track what works and what doesn't
-- Review trades daily
+## 🔧 Configuration
 
-## 🐛 Quick Troubleshooting
+### Required Environment Variables
+Edit `.env` with your actual values:
 
-### "Cannot connect to Alpaca"
-- Check API keys are correct
-- Verify you're using **Paper Trading** keys
-- Ensure no extra spaces in `.env`
+```env
+# Alpaca API (Get from https://alpaca.markets)
+ALPACA_API_KEY=your_alpaca_key
+ALPACA_SECRET_KEY=your_alpaca_secret
 
-### "No market data"
-- Check if market is open
-- Verify symbols are valid
-- Restart the application
+# Gemini AI (Get from https://ai.google.dev)
+GEMINI_API_KEY=your_gemini_key
 
-### "WebSocket not connecting"
-- Check backend is running on port 3001
-- Verify frontend is on port 3000
-- Check browser console for errors
+# JWT Secret (Generate with: openssl rand -hex 32)
+JWT_SECRET=your_random_secret_here
 
-### "Orders not executing"
-- Ensure market is open
-- Check you have buying power
-- Verify symbol is tradeable
+# Redis (use defaults for local)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=redis_password
 
-## 📚 Next Steps
+# Database
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=trading_db
+POSTGRES_USER=trading_user
+POSTGRES_PASSWORD=trading_password
+```
 
-1. **Read Full Docs**: See `README.md` for details
-2. **Deploy to Production**: See `DEPLOYMENT.md`
-3. **Customize**: Modify detection algorithms
-4. **Add Features**: Extend with new functionality
+---
 
-## 🎓 Learning Resources
+## ✅ Verify Installation
 
-### Alpaca Documentation
-- https://alpaca.markets/docs
+### 1. Check Redis
+```bash
+redis-cli ping
+# Expected: PONG
 
-### Trading Concepts
-- Volume analysis
-- Support and resistance
-- Technical indicators
-- Risk management
+redis-cli
+> SET test "Hello"
+> GET test
+> exit
+```
 
-### Next.js & React
-- https://nextjs.org/docs
-- https://react.dev
+### 2. Check PostgreSQL
+```bash
+psql -U trading_user -d trading_db -c "SELECT NOW();"
+# Should show current timestamp
+```
 
-## ⚠️ Important Reminders
+### 3. Check Backend
+```bash
+curl http://localhost:4001/health
+# Expected: {"status":"ok","timestamp":"..."}
+```
 
-- ✅ This is **paper trading** (fake money)
-- ✅ Perfect for learning and testing
-- ❌ Never use real trading keys in development
-- ❌ Don't risk real money without thorough testing
+### 4. Check Redis Integration
+```bash
+# Backend logs should show:
+✅ Redis: Connected successfully
+✅ Redis: Ready to accept commands
+```
 
-## 🎉 You're Ready!
+### 5. Check Circuit Breakers
+```bash
+# Backend logs should show:
+✅ Gemini AI client initialized with model: gemini-2.0-flash-exp
+✅ Circuit breaker CLOSED for GetQuote
+✅ Circuit breaker CLOSED for GetBars
+```
 
-Start exploring, test strategies, and have fun learning algorithmic trading!
+---
 
-Questions? Check the full README.md or open an issue.
+## 🐛 Common Issues
 
-**Happy Trading! 📈**
+### Redis Not Starting
+```bash
+# Check if port 6379 is in use
+lsof -i :6379
+
+# Kill process if needed
+kill -9 <PID>
+
+# Start Redis
+redis-server
+```
+
+### PostgreSQL Connection Failed
+```bash
+# Check PostgreSQL is running
+pg_isready
+
+# If not running
+brew services start postgresql@15  # macOS
+sudo systemctl start postgresql    # Linux
+
+# Check connection
+psql -U trading_user -d trading_db
+```
+
+### Port Already in Use
+```bash
+# Check what's using port 4001
+lsof -i :4001
+
+# Kill process
+kill -9 <PID>
+
+# Or change port in .env
+BACKEND_PORT=4002
+```
+
+### Missing Dependencies
+```bash
+# Backend
+cd backend
+rm -rf node_modules package-lock.json
+npm install
+
+# Frontend
+cd frontend
+rm -rf node_modules package-lock.json
+npm install
+```
+
+---
+
+## 🎯 First Time Setup Checklist
+
+- [ ] Redis installed and running
+- [ ] PostgreSQL installed and running
+- [ ] Database created and migrations run
+- [ ] `.env` file created with API keys
+- [ ] Backend dependencies installed
+- [ ] Frontend dependencies installed
+- [ ] Backend running on port 4001
+- [ ] Frontend running on port 3000
+- [ ] Can access frontend at http://localhost:3000
+- [ ] Health check passes at http://localhost:4001/health
+
+---
+
+## 📊 Monitoring
+
+### View Backend Logs
+```bash
+cd backend
+npm run dev
+
+# Look for:
+✅ Redis: Connected successfully
+✅ Alpaca account connected: ABC123
+✅ Market data cache service started
+📡 News stream started
+```
+
+### Check Rate Limits
+```bash
+# Get rate limit status
+curl http://localhost:4001/api/user/rate-limit-status \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Check Redis Cache
+```bash
+redis-cli
+> KEYS market:*
+> GET market:quote:AAPL
+> KEYS ratelimit:*
+```
+
+---
+
+## 🚀 Next Steps
+
+1. **Create Account**: Go to http://localhost:3000 and register
+2. **Create Virtual Portfolio**: Portfolio auto-created with $100,000
+3. **Create Experiment**: Test different trading strategies
+4. **Enable AI Trading**: Create bot with "AI News Trader" strategy
+5. **Monitor Performance**: View dashboard for real-time updates
+
+---
+
+## 📚 Documentation
+
+- [Infrastructure Upgrade](INFRASTRUCTURE_UPGRADE.md) - Redis, Circuit Breaker, Rate Limiting
+- [API Documentation](http://localhost:4001/api-docs) - Swagger docs (coming soon)
+- Backend README: `backend/README.md`
+- Frontend README: `frontend/README.md`
+
+---
+
+## 🆘 Getting Help
+
+If you encounter issues:
+
+1. Check logs: `docker-compose logs -f` or terminal output
+2. Verify all services running: `docker-compose ps`
+3. Check environment variables in `.env`
+4. Restart services: `docker-compose restart`
+5. Clear cache: `redis-cli FLUSHALL` (dev only)
+
+---
+
+## 🎉 Success!
+
+Your AI Stock Trader is now running with:
+- ✅ Redis caching (faster performance)
+- ✅ Circuit breaker (failure protection)
+- ✅ Rate limiting (API protection)
+- ✅ Order validation (safer trading)
+- ✅ AI news trading (Gemini powered)
+- ✅ Multiple strategies (5 traditional + 1 AI)
+
+Happy Trading! 📈

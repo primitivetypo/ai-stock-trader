@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Mail, Lock, User, ArrowRight, Sparkles } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, TrendingUp } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function Login() {
@@ -40,35 +40,53 @@ export default function Login() {
     }
   };
 
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    try {
+      const response = await api.post('/api/auth/login', {
+        email: 'demo@demo.com',
+        password: 'demo123'
+      });
+
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+
+      toast.success('Welcome to the demo!');
+      router.push('/dashboard');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Demo login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="glass-card p-8 md:p-10 max-w-md w-full animate-slide-in-up">
+    <div className="card-elevated p-8 max-w-md w-full animate-slide-up">
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg shadow-blue-500/30">
-          <Sparkles className="w-8 h-8 text-white" />
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-brand-500 mb-4">
+          <TrendingUp className="w-7 h-7 text-white" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">
-          {isLogin ? 'Welcome Back' : 'Create Account'}
+        <h2 className="text-heading-lg font-bold text-content-primary mb-1">
+          {isLogin ? 'Welcome back' : 'Create account'}
         </h2>
-        <p className="text-slate-600">
+        <p className="text-body text-content-secondary">
           {isLogin ? 'Sign in to your trading account' : 'Start your trading journey today'}
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         {!isLogin && (
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">
+          <div>
+            <label className="block text-caption font-medium text-content-secondary mb-2">
               Full Name
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-slate-400" />
-              </div>
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-tertiary" />
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="input-primary pl-11"
+                className="input input-with-icon"
                 placeholder="John Doe"
                 required={!isLogin}
               />
@@ -76,39 +94,35 @@ export default function Login() {
           </div>
         )}
 
-        <div className="space-y-2">
-          <label className="block text-sm font-semibold text-slate-700">
-            Email Address
+        <div>
+          <label className="block text-caption font-medium text-content-secondary mb-2">
+            Email
           </label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Mail className="h-5 w-5 text-slate-400" />
-            </div>
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-tertiary" />
             <input
               type="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="input-primary pl-11"
+              className="input input-with-icon"
               placeholder="you@example.com"
               required
             />
           </div>
         </div>
 
-        <div className="space-y-2">
-          <label className="block text-sm font-semibold text-slate-700">
+        <div>
+          <label className="block text-caption font-medium text-content-secondary mb-2">
             Password
           </label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Lock className="h-5 w-5 text-slate-400" />
-            </div>
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-tertiary" />
             <input
               type="password"
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="input-primary pl-11"
-              placeholder="••••••••"
+              className="input input-with-icon"
+              placeholder="Enter password"
               required
             />
           </div>
@@ -117,49 +131,46 @@ export default function Login() {
         <button
           type="submit"
           disabled={loading}
-          className="btn-primary w-full mt-6 flex items-center justify-center gap-2"
+          className="btn-primary w-full mt-2"
         >
           {loading ? (
             <>
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Processing...</span>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Processing...
             </>
           ) : (
             <>
-              <span>{isLogin ? 'Sign In' : 'Create Account'}</span>
-              <ArrowRight className="w-5 h-5" />
+              {isLogin ? 'Sign In' : 'Create Account'}
+              <ArrowRight className="w-4 h-4" />
             </>
           )}
         </button>
       </form>
 
-      <div className="mt-8 text-center">
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200"></div>
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-4 bg-white/80 text-slate-600">
-              {isLogin ? "Don't have an account?" : 'Already have an account?'}
-            </span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setIsLogin(!isLogin)}
-          className="mt-4 text-blue-600 hover:text-blue-700 font-semibold text-sm transition-colors"
-        >
-          {isLogin ? 'Sign up for free' : 'Sign in instead'}
-        </button>
+      <div className="mt-6 text-center">
+        <p className="text-caption text-content-secondary">
+          {isLogin ? "Don't have an account?" : 'Already have an account?'}
+          <button
+            type="button"
+            onClick={() => setIsLogin(!isLogin)}
+            className="ml-1 text-brand-500 hover:text-brand-600 font-semibold transition-colors"
+          >
+            {isLogin ? 'Sign up' : 'Sign in'}
+          </button>
+        </p>
       </div>
 
       {isLogin && (
-        <div className="mt-6 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
-          <p className="text-sm text-slate-700 font-medium mb-2">Demo Account</p>
-          <p className="text-xs text-slate-600">
-            Email: <span className="font-mono font-semibold">demo@demo.com</span><br />
-            Password: <span className="font-mono font-semibold">demo123</span>
-          </p>
+        <div className="mt-6 p-4 rounded-lg bg-brand-50 border border-brand-100">
+          <p className="text-caption font-semibold text-content-primary mb-2">Try the Demo</p>
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            disabled={loading}
+            className="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          >
+            Quick Demo Login
+          </button>
         </div>
       )}
     </div>

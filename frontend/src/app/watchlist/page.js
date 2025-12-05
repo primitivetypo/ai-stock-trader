@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Eye, Plus, X, TrendingUp, TrendingDown, DollarSign, RefreshCw } from 'lucide-react';
+import { Eye, Plus, X, TrendingUp, TrendingDown, Search, RefreshCw, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -12,9 +12,19 @@ export default function Watchlist() {
   const [levels, setLevels] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   useEffect(() => {
     loadWatchlist();
+
+    const refreshInterval = setInterval(() => {
+      if (!refreshing) {
+        refreshPrices();
+      }
+    }, 10000);
+
+    return () => clearInterval(refreshInterval);
   }, []);
 
   const loadWatchlist = async () => {
@@ -45,9 +55,24 @@ export default function Watchlist() {
     }
   };
 
+  const refreshPrices = async () => {
+    if (watchlist.length === 0) return;
+
+    try {
+      for (const symbol of watchlist) {
+        const response = await api.get(`/api/market/levels/${symbol}`);
+        setLevels((prev) => ({
+          ...prev,
+          [symbol]: response.data
+        }));
+      }
+    } catch (error) {
+      console.error('Background price refresh failed:', error);
+    }
+  };
+
   const handleAddSymbol = async (e) => {
     e.preventDefault();
-
     if (!newSymbol) return;
 
     try {
@@ -78,13 +103,38 @@ export default function Watchlist() {
     loadWatchlist();
   };
 
+  const handleSearchSymbol = async (query) => {
+    setNewSymbol(query);
+
+    if (query.length < 1) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    try {
+      const response = await api.get(`/api/market/search?q=${encodeURIComponent(query)}&limit=10`);
+      setSearchResults(response.data);
+      setShowDropdown(true);
+    } catch (error) {
+      console.error('Search failed:', error);
+      setSearchResults([]);
+    }
+  };
+
+  const selectSymbol = (symbol) => {
+    setNewSymbol(symbol);
+    setShowDropdown(false);
+    setSearchResults([]);
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center h-[60vh]">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-            <p className="text-slate-600 font-medium">Loading watchlist...</p>
+            <div className="w-10 h-10 border-3 border-brand-200 border-t-brand-500 rounded-full animate-spin" />
+            <p className="text-body text-content-secondary">Loading watchlist...</p>
           </div>
         </div>
       </DashboardLayout>
@@ -94,109 +144,129 @@ export default function Watchlist() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Watchlist</h1>
-            <p className="text-slate-600 mt-1">
-              Monitor symbols and support/resistance levels
-            </p>
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="page-header mb-0">
+            <h1 className="page-title">Watchlist</h1>
+            <p className="page-subtitle">Monitor symbols and support/resistance levels</p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-caption text-success font-medium">Auto-updating every 10s</span>
+            </div>
           </div>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
 
-        <div className="glass-card p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 shadow-lg">
-              <Plus className="w-5 h-5 text-white" />
-            </div>
-            <h2 className="text-lg font-bold text-slate-900">Add Symbol</h2>
+        {/* Add Symbol Form */}
+        <div className="card-elevated p-6">
+          <div className="section-header">
+            <h3 className="section-title">Add Symbol</h3>
           </div>
           <form onSubmit={handleAddSymbol} className="flex gap-3">
-            <input
-              type="text"
-              value={newSymbol}
-              onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-              placeholder="Enter symbol (e.g., AAPL)"
-              className="flex-1 input-primary"
-            />
-            <button
-              type="submit"
-              className="btn-primary flex items-center gap-2 px-8"
-            >
-              <Plus className="w-5 h-5" />
+            <div className="flex-1 relative">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-tertiary" />
+                <input
+                  type="text"
+                  value={newSymbol}
+                  onChange={(e) => handleSearchSymbol(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                  placeholder="Search for a symbol (e.g., AAPL)"
+                  className="input input-with-icon"
+                  autoComplete="off"
+                />
+              </div>
+              {showDropdown && searchResults.length > 0 && (
+                <div className="dropdown max-h-72 overflow-y-auto scrollbar-thin">
+                  {searchResults.map((asset) => (
+                    <button
+                      key={asset.symbol}
+                      type="button"
+                      onClick={() => selectSymbol(asset.symbol)}
+                      className="dropdown-item w-full flex items-center justify-between"
+                    >
+                      <div className="text-left">
+                        <div className="font-semibold text-content-primary">{asset.symbol}</div>
+                        <div className="text-caption text-content-tertiary">{asset.name}</div>
+                      </div>
+                      <span className="badge-default">{asset.exchange}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button type="submit" className="btn-primary">
+              <Plus className="w-4 h-4" />
               Add
             </button>
           </form>
         </div>
 
+        {/* Watchlist Grid */}
         {watchlist.length === 0 ? (
-          <div className="glass-card p-12">
-            <div className="flex flex-col items-center justify-center text-center">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center mb-6">
-                <Eye className="w-12 h-12 text-slate-400" />
+          <div className="card-elevated p-6">
+            <div className="empty-state py-12">
+              <div className="empty-state-icon">
+                <Eye className="w-7 h-7 text-content-tertiary" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">No symbols in watchlist</h3>
-              <p className="text-slate-600 max-w-md">
+              <p className="empty-state-title">No symbols in watchlist</p>
+              <p className="empty-state-text">
                 Add symbols above to start monitoring their support and resistance levels
               </p>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {watchlist.map((symbol) => {
               const symbolLevels = levels[symbol];
 
               return (
-                <div
-                  key={symbol}
-                  className="glass-card p-6 relative group hover:shadow-2xl transition-all duration-300"
-                >
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-2xl font-bold text-slate-900">{symbol}</h3>
+                <div key={symbol} className="card-elevated p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 font-bold">
+                        {symbol.slice(0, 2)}
+                      </div>
+                      <h3 className="text-heading font-bold text-content-primary">{symbol}</h3>
+                    </div>
                     <button
                       onClick={() => handleRemoveSymbol(symbol)}
-                      className="p-2 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors"
+                      className="btn-icon text-danger hover:bg-danger-light"
                     >
-                      <X className="w-5 h-5" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
 
                   {symbolLevels ? (
                     <div className="space-y-4">
-                      <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
-                        <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="w-4 h-4 text-blue-600" />
-                          <span className="text-sm font-semibold text-slate-700">
-                            Current Price
-                          </span>
-                        </div>
-                        <div className="text-2xl font-bold text-slate-900">
+                      {/* Current Price */}
+                      <div className="p-4 rounded-lg bg-brand-50 border border-brand-100">
+                        <p className="text-caption text-content-secondary mb-1">Current Price</p>
+                        <p className="text-heading-lg font-bold text-content-primary tabular-nums">
                           ${symbolLevels.currentPrice.toFixed(2)}
-                        </div>
+                        </p>
                       </div>
 
-                      <div className="p-4 rounded-xl bg-rose-50 border border-rose-100">
+                      {/* Resistance Levels */}
+                      <div className="p-4 rounded-lg bg-danger-light/50 border border-danger/10">
                         <div className="flex items-center gap-2 mb-3">
-                          <TrendingUp className="w-4 h-4 text-rose-600" />
-                          <span className="text-sm font-semibold text-slate-700">
+                          <ArrowUpRight className="w-4 h-4 text-danger" />
+                          <span className="text-caption font-semibold text-content-secondary">
                             Resistance Levels
                           </span>
                         </div>
                         <div className="space-y-2">
                           {symbolLevels.resistance.map((level, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between text-sm"
-                            >
-                              <span className="text-slate-600">R{i + 1}</span>
-                              <span className="font-bold text-rose-600">
+                            <div key={i} className="flex items-center justify-between text-caption">
+                              <span className="text-content-tertiary">R{i + 1}</span>
+                              <span className="font-bold text-danger tabular-nums">
                                 ${level.toFixed(2)}
                               </span>
                             </div>
@@ -204,21 +274,19 @@ export default function Watchlist() {
                         </div>
                       </div>
 
-                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
+                      {/* Support Levels */}
+                      <div className="p-4 rounded-lg bg-success-light/50 border border-success/10">
                         <div className="flex items-center gap-2 mb-3">
-                          <TrendingDown className="w-4 h-4 text-emerald-600" />
-                          <span className="text-sm font-semibold text-slate-700">
+                          <ArrowDownRight className="w-4 h-4 text-success" />
+                          <span className="text-caption font-semibold text-content-secondary">
                             Support Levels
                           </span>
                         </div>
                         <div className="space-y-2">
                           {symbolLevels.support.map((level, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between text-sm"
-                            >
-                              <span className="text-slate-600">S{i + 1}</span>
-                              <span className="font-bold text-emerald-600">
+                            <div key={i} className="flex items-center justify-between text-caption">
+                              <span className="text-content-tertiary">S{i + 1}</span>
+                              <span className="font-bold text-success tabular-nums">
                                 ${level.toFixed(2)}
                               </span>
                             </div>
@@ -226,15 +294,15 @@ export default function Watchlist() {
                         </div>
                       </div>
 
-                      <div className="text-xs text-slate-500 text-center pt-2">
+                      <p className="text-tiny text-content-tertiary text-center">
                         Updated: {new Date(symbolLevels.updatedAt).toLocaleTimeString()}
-                      </div>
+                      </p>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center justify-center py-12">
                       <div className="flex flex-col items-center gap-3">
-                        <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin" />
-                        <span className="text-slate-600 text-sm font-medium">Loading levels...</span>
+                        <div className="w-8 h-8 border-2 border-surface-300 border-t-brand-500 rounded-full animate-spin" />
+                        <span className="text-caption text-content-tertiary">Loading levels...</span>
                       </div>
                     </div>
                   )}

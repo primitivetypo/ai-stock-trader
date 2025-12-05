@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -12,13 +12,36 @@ import {
   LogOut,
   Menu,
   X,
-  Sparkles
+  Sparkles,
+  Settings,
+  Bell,
+  Search,
+  ChevronRight
 } from 'lucide-react';
+
+const navigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Trading', href: '/trading', icon: TrendingUp },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Watchlist', href: '/watchlist', icon: Eye },
+  { name: 'Experiments', href: '/experiments', icon: FlaskConical },
+  { name: 'Marketplace', href: '/marketplace', icon: Sparkles },
+];
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [user, setUser] = useState({ name: 'User', email: 'user@example.com' });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      if (userData.name) {
+        setUser(userData);
+      }
+    }
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -26,114 +49,145 @@ export default function DashboardLayout({ children }) {
     router.push('/');
   };
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Trading', href: '/trading', icon: TrendingUp },
-    { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-    { name: 'Watchlist', href: '/watchlist', icon: Eye },
-    { name: 'Experiments', href: '/experiments', icon: FlaskConical },
-  ];
+  const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40">
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 rounded-xl bg-white/80 backdrop-blur-sm shadow-lg border border-slate-200 text-slate-700 hover:bg-white transition-all"
-      >
-        {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-      </button>
+    <div className="min-h-screen bg-surface-50">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-content-primary/20 backdrop-blur-sm z-40 lg:hidden"
+          onClick={closeSidebar}
+        />
+      )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 w-72 h-screen transition-transform duration-300 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed top-0 left-0 z-50 h-screen w-64 bg-surface-0 border-r border-surface-200 transform transition-transform duration-300 ease-smooth ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
       >
-        <div className="h-full px-4 py-6 bg-white/60 backdrop-blur-xl border-r border-slate-200/60 flex flex-col">
+        <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="mb-8 px-2">
-            <Link href="/dashboard" className="flex items-center gap-3 group">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 group-hover:scale-105 transition-transform">
-                <Sparkles className="w-6 h-6 text-white" />
+          <div className="h-16 flex items-center px-5 border-b border-surface-100">
+            <Link href="/dashboard" className="flex items-center gap-3" onClick={closeSidebar}>
+              <div className="w-9 h-9 rounded-lg bg-brand-500 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">AI Trader</h2>
-                <p className="text-xs text-slate-600 font-medium">Paper Trading</p>
-              </div>
+              <span className="text-heading font-bold text-content-primary">TradeAI</span>
             </Link>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-1.5">
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
             {navigation.map((item) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;
-              
+
               return (
                 <Link
                   key={item.name}
                   href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3.5 rounded-xl font-medium transition-all duration-200 ${
-                    isActive
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
-                      : 'text-slate-700 hover:bg-white/80 hover:shadow-sm'
-                  }`}
+                  onClick={closeSidebar}
+                  className={isActive ? 'nav-item-active' : 'nav-item'}
                 >
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                  <Icon className="w-5 h-5" />
                   <span>{item.name}</span>
-                  {isActive && (
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />
-                  )}
                 </Link>
               );
             })}
           </nav>
 
-          {/* User Profile Section */}
-          <div className="pt-4 border-t border-slate-200">
-            <div className="mb-3 px-4 py-3 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold text-sm shadow-md">
-                  {typeof window !== 'undefined' && JSON.parse(localStorage.getItem('user') || '{}').name?.charAt(0) || 'U'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 truncate">
-                    {typeof window !== 'undefined' && JSON.parse(localStorage.getItem('user') || '{}').name || 'User'}
-                  </p>
-                  <p className="text-xs text-slate-600 truncate">
-                    {typeof window !== 'undefined' && JSON.parse(localStorage.getItem('user') || '{}').email || 'user@example.com'}
-                  </p>
-                </div>
+          {/* User Section */}
+          <div className="p-3 border-t border-surface-100">
+            <Link
+              href="/settings"
+              onClick={closeSidebar}
+              className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                pathname === '/settings'
+                  ? 'bg-brand-50 text-brand-600'
+                  : 'hover:bg-surface-50'
+              }`}
+            >
+              <div className="avatar-sm">
+                {user.name?.charAt(0).toUpperCase() || 'U'}
               </div>
-            </div>
-            
+              <div className="flex-1 min-w-0">
+                <p className="text-body font-medium text-content-primary truncate">
+                  {user.name}
+                </p>
+                <p className="text-caption text-content-tertiary truncate">
+                  {user.email}
+                </p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-content-tertiary" />
+            </Link>
+
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-all duration-200 font-medium"
+              className="w-full mt-2 flex items-center gap-3 px-3 py-2.5 rounded-lg text-body font-medium text-content-secondary hover:bg-danger-light hover:text-danger transition-colors"
             >
               <LogOut className="w-5 h-5" />
-              <span>Logout</span>
+              <span>Log out</span>
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="lg:ml-72">
-        <main className="p-4 lg:p-8 min-h-screen">
-          {children}
+      {/* Main Content Area */}
+      <div className="lg:pl-64">
+        {/* Top Header */}
+        <header className="sticky top-0 z-30 h-16 bg-surface-0/80 backdrop-blur-md border-b border-surface-100">
+          <div className="flex items-center justify-between h-full px-4 lg:px-6">
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden btn-icon"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Search (Desktop) */}
+            <div className="hidden md:flex items-center flex-1 max-w-md">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-tertiary" />
+                <input
+                  type="text"
+                  placeholder="Search symbols, features..."
+                  className="input input-with-icon py-2 text-caption"
+                />
+              </div>
+            </div>
+
+            {/* Right Actions */}
+            <div className="flex items-center gap-2">
+              <button className="btn-icon relative">
+                <Bell className="w-5 h-5" />
+                <span className="absolute top-1 right-1 w-2 h-2 bg-danger rounded-full" />
+              </button>
+
+              <div className="hidden sm:block pl-2 border-l border-surface-200 ml-2">
+                <div className="flex items-center gap-3 px-2">
+                  <div className="text-right">
+                    <p className="text-caption font-medium text-content-primary">{user.name}</p>
+                    <p className="text-tiny text-content-tertiary">Paper Trading</p>
+                  </div>
+                  <div className="avatar-sm">
+                    {user.name?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="p-4 lg:p-6 min-h-[calc(100vh-4rem)]">
+          <div className="max-w-7xl mx-auto animate-fade-in">
+            {children}
+          </div>
         </main>
       </div>
-
-      {/* Mobile menu overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-30 lg:hidden transition-opacity"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
     </div>
   );
 }

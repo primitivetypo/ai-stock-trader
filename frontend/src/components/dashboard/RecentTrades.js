@@ -1,111 +1,128 @@
+'use client';
+
 import { formatDistanceToNow } from 'date-fns';
-import { History, TrendingUp, TrendingDown, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, CheckCircle, XCircle, Clock, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 export default function RecentTrades({ trades }) {
-  return (
-    <div className="glass-card p-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 shadow-lg">
-          <History className="w-5 h-5 text-white" />
+  if (!trades || trades.length === 0) {
+    return (
+      <div className="card-elevated p-6">
+        <div className="section-header">
+          <h3 className="section-title">Recent Trades</h3>
         </div>
-        <h2 className="text-xl font-bold text-slate-900">Recent Trades</h2>
-        {trades.length > 0 && (
-          <span className="ml-auto badge badge-info">
-            {trades.length} trades
+        <div className="empty-state py-12">
+          <div className="empty-state-icon">
+            <History className="w-7 h-7 text-content-tertiary" />
+          </div>
+          <p className="empty-state-title">No trades yet</p>
+          <p className="empty-state-text mb-4">
+            Your trading history will appear here
+          </p>
+          <Link href="/trading" className="btn-primary btn-sm">
+            Start Trading
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'filled':
+        return (
+          <span className="badge-success flex items-center gap-1">
+            <CheckCircle className="w-3 h-3" />
+            Filled
           </span>
-        )}
+        );
+      case 'canceled':
+        return (
+          <span className="badge-danger flex items-center gap-1">
+            <XCircle className="w-3 h-3" />
+            Canceled
+          </span>
+        );
+      default:
+        return (
+          <span className="badge-warning flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {status}
+          </span>
+        );
+    }
+  };
+
+  return (
+    <div className="card-elevated overflow-hidden">
+      <div className="p-6 pb-0">
+        <div className="section-header mb-0">
+          <h3 className="section-title">Recent Trades</h3>
+          <Link href="/analytics" className="btn-ghost btn-sm text-brand-500">
+            View all
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
       </div>
 
-      {trades.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-center py-12">
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center mb-4">
-            <History className="w-10 h-10 text-slate-400" />
-          </div>
-          <p className="text-slate-600 font-medium">No trades yet</p>
-          <p className="text-sm text-slate-500 mt-1">Your trade history will appear here</p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-slate-600 text-sm font-semibold border-b border-slate-200">
-                <th className="pb-3 px-2">Symbol</th>
-                <th className="pb-3 px-2">Side</th>
-                <th className="pb-3 px-2">Quantity</th>
-                <th className="pb-3 px-2">Price</th>
-                <th className="pb-3 px-2">Status</th>
-                <th className="pb-3 px-2">Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trades.map((trade) => {
-                const isBuy = trade.side === 'buy';
-                const status = trade.status;
-                
-                return (
-                  <tr
-                    key={trade.id}
-                    className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors"
-                  >
-                    <td className="py-4 px-2">
-                      <span className="text-slate-900 font-bold">{trade.symbol}</span>
-                    </td>
-                    <td className="py-4 px-2">
-                      <div className="flex items-center gap-1.5">
-                        {isBuy ? (
-                          <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        ) : (
-                          <TrendingDown className="w-4 h-4 text-rose-600" />
-                        )}
-                        <span className={`badge ${isBuy ? 'badge-success' : 'badge-danger'}`}>
-                          {trade.side.toUpperCase()}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-2">
-                      <span className="text-slate-900 font-semibold">
-                        {trade.filled_qty || trade.qty}
-                      </span>
-                    </td>
-                    <td className="py-4 px-2">
-                      <span className="text-slate-900 font-semibold">
-                        ${parseFloat(trade.filled_avg_price || trade.limit_price || 0).toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="py-4 px-2">
-                      {status === 'filled' && (
-                        <div className="flex items-center gap-1.5">
-                          <CheckCircle className="w-4 h-4 text-emerald-600" />
-                          <span className="badge badge-success">Filled</span>
-                        </div>
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Quantity</th>
+              <th>Price</th>
+              <th>Status</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trades.slice(0, 10).map((trade) => {
+              const isBuy = trade.side === 'buy';
+              const price = parseFloat(trade.filled_avg_price || trade.limit_price || 0);
+
+              return (
+                <tr key={trade.id}>
+                  <td>
+                    <span className="font-semibold text-content-primary">{trade.symbol}</span>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-1.5">
+                      {isBuy ? (
+                        <TrendingUp className="w-4 h-4 text-success" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-danger" />
                       )}
-                      {status === 'canceled' && (
-                        <div className="flex items-center gap-1.5">
-                          <XCircle className="w-4 h-4 text-rose-600" />
-                          <span className="badge badge-danger">Canceled</span>
-                        </div>
-                      )}
-                      {status !== 'filled' && status !== 'canceled' && (
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-4 h-4 text-amber-600" />
-                          <span className="badge badge-warning">{status}</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-4 px-2">
-                      <span className="text-slate-600 text-sm font-medium">
-                        {formatDistanceToNow(new Date(trade.submitted_at || trade.timestamp), {
-                          addSuffix: true
-                        })}
+                      <span className={`text-caption font-semibold ${isBuy ? 'text-success' : 'text-danger'}`}>
+                        {trade.side.toUpperCase()}
                       </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </div>
+                  </td>
+                  <td>
+                    <span className="font-medium tabular-nums">
+                      {trade.filled_qty || trade.qty}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="font-medium tabular-nums">
+                      ${price.toFixed(2)}
+                    </span>
+                  </td>
+                  <td>{getStatusBadge(trade.status)}</td>
+                  <td>
+                    <span className="text-content-secondary text-caption">
+                      {formatDistanceToNow(new Date(trade.submitted_at || trade.timestamp), {
+                        addSuffix: true
+                      })}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

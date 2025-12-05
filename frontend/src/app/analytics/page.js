@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  BarChart3, 
-  Target, 
-  DollarSign, 
-  TrendingUp, 
+import {
+  BarChart3,
+  Target,
+  DollarSign,
+  TrendingUp,
   TrendingDown,
   Activity,
   Package,
-  FileText
+  FileText,
+  RefreshCw,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import api from '@/lib/api';
@@ -18,6 +21,7 @@ export default function Analytics() {
   const [statistics, setStatistics] = useState(null);
   const [performance, setPerformance] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -36,16 +40,31 @@ export default function Analytics() {
       console.error('Failed to load analytics:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadAnalytics();
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
   };
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center h-[60vh]">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-            <p className="text-slate-600 font-medium">Loading analytics...</p>
+            <div className="w-10 h-10 border-3 border-brand-200 border-t-brand-500 rounded-full animate-spin" />
+            <p className="text-body text-content-secondary">Loading analytics...</p>
           </div>
         </div>
       </DashboardLayout>
@@ -55,176 +74,204 @@ export default function Analytics() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Analytics</h1>
-          <p className="text-slate-600 mt-1">
-            Performance metrics and trading statistics
-          </p>
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="page-header mb-0">
+            <h1 className="page-title">Analytics</h1>
+            <p className="page-subtitle">Performance metrics and trading statistics</p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="btn-secondary"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
 
+        {/* Key Metrics */}
         {statistics && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard
-              title="Total Trades"
-              value={statistics.totalTrades}
-              icon={BarChart3}
-              gradient="from-blue-500 to-cyan-500"
-            />
-            <StatCard
-              title="Win Rate"
-              value={`${statistics.winRate.toFixed(1)}%`}
-              subtitle={`${statistics.wins}W / ${statistics.losses}L`}
-              icon={Target}
-              gradient="from-emerald-500 to-teal-500"
-              isPositive={statistics.winRate >= 50}
-            />
-            <StatCard
-              title="Total P&L"
-              value={`$${statistics.totalProfit.toFixed(2)}`}
-              icon={DollarSign}
-              gradient="from-indigo-500 to-purple-500"
-              isPositive={statistics.totalProfit >= 0}
-            />
-            <StatCard
-              title="Avg P&L/Trade"
-              value={`$${statistics.avgProfitPerTrade.toFixed(2)}`}
-              icon={statistics.avgProfitPerTrade >= 0 ? TrendingUp : TrendingDown}
-              gradient="from-amber-500 to-orange-500"
-              isPositive={statistics.avgProfitPerTrade >= 0}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="metric-card group">
+              <div className="flex items-start justify-between mb-3">
+                <span className="metric-label">Total Trades</span>
+                <div className="p-2 rounded-lg bg-brand-50 text-brand-500 group-hover:bg-brand-500 group-hover:text-white transition-colors">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="metric-value tabular-nums">{statistics.totalTrades}</div>
+            </div>
+
+            <div className="metric-card group">
+              <div className="flex items-start justify-between mb-3">
+                <span className="metric-label">Win Rate</span>
+                <div className={`p-2 rounded-lg transition-colors ${
+                  statistics.winRate >= 50
+                    ? 'bg-success-light text-success group-hover:bg-success group-hover:text-white'
+                    : 'bg-danger-light text-danger group-hover:bg-danger group-hover:text-white'
+                }`}>
+                  <Target className="w-4 h-4" />
+                </div>
+              </div>
+              <div className={`metric-value tabular-nums ${statistics.winRate >= 50 ? 'text-success' : 'text-danger'}`}>
+                {statistics.winRate.toFixed(1)}%
+              </div>
+              <p className="text-caption text-content-secondary mt-1">
+                {statistics.wins}W / {statistics.losses}L
+              </p>
+            </div>
+
+            <div className="metric-card group">
+              <div className="flex items-start justify-between mb-3">
+                <span className="metric-label">Total P&L</span>
+                <div className={`p-2 rounded-lg transition-colors ${
+                  statistics.totalProfit >= 0
+                    ? 'bg-success-light text-success group-hover:bg-success group-hover:text-white'
+                    : 'bg-danger-light text-danger group-hover:bg-danger group-hover:text-white'
+                }`}>
+                  <DollarSign className="w-4 h-4" />
+                </div>
+              </div>
+              <div className={`metric-value tabular-nums ${statistics.totalProfit >= 0 ? 'text-success' : 'text-danger'}`}>
+                {statistics.totalProfit >= 0 ? '+' : ''}{formatCurrency(statistics.totalProfit)}
+              </div>
+            </div>
+
+            <div className="metric-card group">
+              <div className="flex items-start justify-between mb-3">
+                <span className="metric-label">Avg P&L/Trade</span>
+                <div className={`p-2 rounded-lg transition-colors ${
+                  statistics.avgProfitPerTrade >= 0
+                    ? 'bg-success-light text-success group-hover:bg-success group-hover:text-white'
+                    : 'bg-danger-light text-danger group-hover:bg-danger group-hover:text-white'
+                }`}>
+                  {statistics.avgProfitPerTrade >= 0 ? (
+                    <ArrowUpRight className="w-4 h-4" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4" />
+                  )}
+                </div>
+              </div>
+              <div className={`metric-value tabular-nums ${statistics.avgProfitPerTrade >= 0 ? 'text-success' : 'text-danger'}`}>
+                {statistics.avgProfitPerTrade >= 0 ? '+' : ''}{formatCurrency(statistics.avgProfitPerTrade)}
+              </div>
+            </div>
           </div>
         )}
 
+        {/* Performance Details */}
         {performance && (
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 shadow-lg">
-                <Activity className="w-5 h-5 text-white" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">Performance Details</h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-blue-600" />
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Account Status */}
+            <div className="card-elevated p-6">
+              <div className="section-header">
+                <h3 className="section-title flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-brand-500" />
                   Account Status
                 </h3>
-                <div className="space-y-3">
-                  <DetailRow
-                    label="Equity"
-                    value={`$${performance.account.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  />
-                  <DetailRow
-                    label="Cash"
-                    value={`$${performance.account.cash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  />
-                  <DetailRow
-                    label="Buying Power"
-                    value={`$${performance.account.buyingPower.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  />
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary">Equity</span>
+                  <span className="text-body font-bold text-content-primary tabular-nums">
+                    {formatCurrency(performance.account.equity)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary">Cash</span>
+                  <span className="text-body font-bold text-content-primary tabular-nums">
+                    {formatCurrency(performance.account.cash)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary">Buying Power</span>
+                  <span className="text-body font-bold text-content-primary tabular-nums">
+                    {formatCurrency(performance.account.buyingPower)}
+                  </span>
                 </div>
               </div>
+            </div>
 
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-emerald-600" />
+            {/* Trading Activity */}
+            <div className="card-elevated p-6">
+              <div className="section-header">
+                <h3 className="section-title flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-success" />
                   Trading Activity
                 </h3>
-                <div className="space-y-3">
-                  <DetailRow
-                    label="Open Positions"
-                    value={performance.positions.count}
-                    icon={Package}
-                  />
-                  <DetailRow
-                    label="Total Orders"
-                    value={performance.orders.total}
-                    icon={FileText}
-                  />
-                  <DetailRow
-                    label="Open Orders"
-                    value={performance.orders.open}
-                  />
-                  <DetailRow
-                    label="Filled Orders"
-                    value={performance.orders.filled}
-                  />
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary flex items-center gap-2">
+                    <Package className="w-4 h-4" />
+                    Open Positions
+                  </span>
+                  <span className="text-body font-bold text-content-primary tabular-nums">
+                    {performance.positions.count}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Total Orders
+                  </span>
+                  <span className="text-body font-bold text-content-primary tabular-nums">
+                    {performance.orders.total}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary">Open Orders</span>
+                  <span className="badge-warning">{performance.orders.open}</span>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-surface-50 border border-surface-100">
+                  <span className="text-body text-content-secondary">Filled Orders</span>
+                  <span className="badge-success">{performance.orders.filled}</span>
                 </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* Simulation Metrics */}
         {performance?.simulation && (
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg">
-                <BarChart3 className="w-5 h-5 text-white" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">Simulation Metrics</h2>
+          <div className="card-elevated p-6">
+            <div className="section-header">
+              <h3 className="section-title flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-brand-500" />
+                Simulation Metrics
+              </h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-5 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
-                <div className="text-sm font-semibold text-slate-700 mb-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-5 rounded-lg bg-brand-50 border border-brand-100">
+                <p className="text-caption font-medium text-content-secondary mb-2">
                   Total Simulated Trades
-                </div>
-                <div className="text-3xl font-bold text-slate-900">
+                </p>
+                <p className="text-heading-lg font-bold text-content-primary tabular-nums">
                   {performance.simulation.totalTrades || 0}
-                </div>
+                </p>
               </div>
-              <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100">
-                <div className="text-sm font-semibold text-slate-700 mb-2">
+              <div className="p-5 rounded-lg bg-success-light border border-success/20">
+                <p className="text-caption font-medium text-content-secondary mb-2">
                   Filled Trades
-                </div>
-                <div className="text-3xl font-bold text-slate-900">
+                </p>
+                <p className="text-heading-lg font-bold text-success-dark tabular-nums">
                   {performance.simulation.filledTrades || 0}
-                </div>
+                </p>
               </div>
-              <div className="p-5 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100">
-                <div className="text-sm font-semibold text-slate-700 mb-2">
+              <div className="p-5 rounded-lg bg-warning-light border border-warning/20">
+                <p className="text-caption font-medium text-content-secondary mb-2">
                   Avg Slippage
-                </div>
-                <div className="text-3xl font-bold text-slate-900">
+                </p>
+                <p className="text-heading-lg font-bold text-warning-dark tabular-nums">
                   {((performance.simulation.avgSlippage || 0) * 100).toFixed(3)}%
-                </div>
+                </p>
               </div>
             </div>
           </div>
         )}
       </div>
     </DashboardLayout>
-  );
-}
-
-function StatCard({ title, value, subtitle, icon: Icon, gradient, isPositive }) {
-  return (
-    <div className="stats-card group">
-      <div className="flex items-center justify-between mb-3">
-        <span className="stats-label">{title}</span>
-        <div className={`p-2.5 rounded-xl bg-gradient-to-br ${gradient} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-          <Icon className="w-5 h-5 text-white" />
-        </div>
-      </div>
-      <div className={`stats-value mb-2 ${isPositive !== undefined ? (isPositive ? 'text-emerald-600' : 'text-rose-600') : ''}`}>
-        {value}
-      </div>
-      {subtitle && (
-        <div className="text-sm text-slate-600 font-medium">{subtitle}</div>
-      )}
-    </div>
-  );
-}
-
-function DetailRow({ label, value, icon: Icon }) {
-  return (
-    <div className="flex justify-between items-center py-3 px-4 rounded-lg bg-white/60 hover:bg-white transition-colors">
-      <div className="flex items-center gap-2">
-        {Icon && <Icon className="w-4 h-4 text-slate-500" />}
-        <span className="text-slate-700 font-medium">{label}</span>
-      </div>
-      <span className="text-slate-900 font-bold">{value}</span>
-    </div>
   );
 }

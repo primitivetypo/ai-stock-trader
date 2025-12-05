@@ -2,17 +2,49 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FlaskConical, List, Plus, ArrowLeft, Zap, Target, TrendingUp, Shield, Activity } from 'lucide-react';
+import { FlaskConical, List, Plus, Zap, Target, TrendingUp, Shield, Activity, ChevronDown, ChevronUp, DollarSign, Sparkles } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import ExperimentCreate from '@/components/experiments/ExperimentCreate';
 import ExperimentList from '@/components/experiments/ExperimentList';
-import ExperimentDetails from '@/components/experiments/ExperimentDetails';
+
+const strategies = [
+  {
+    title: 'Volume Spike',
+    description: 'Detects abnormal volume and enters near support levels',
+    risk: 'Medium',
+    color: 'brand'
+  },
+  {
+    title: 'Mean Reversion',
+    description: 'Buys oversold (RSI < 30), sells overbought (RSI > 70)',
+    risk: 'Medium',
+    color: 'success'
+  },
+  {
+    title: 'Breakout',
+    description: 'Trades price breakouts with volume confirmation',
+    risk: 'High',
+    color: 'warning'
+  },
+  {
+    title: 'S/R Bounce',
+    description: 'Enters at support, exits at resistance',
+    risk: 'Low',
+    color: 'brand'
+  },
+  {
+    title: 'AI News Trader',
+    description: 'Uses AI to analyze breaking news sentiment',
+    risk: 'High',
+    color: 'danger'
+  }
+];
 
 export default function ExperimentsPage() {
   const router = useRouter();
   const [view, setView] = useState('list');
-  const [selectedExperimentId, setSelectedExperimentId] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -21,179 +53,144 @@ export default function ExperimentsPage() {
     }
   }, [router]);
 
-  const handleExperimentCreated = (experiment) => {
+  const handleExperimentCreated = () => {
     setRefreshTrigger(prev => prev + 1);
     setView('list');
-  };
-
-  const handleSelectExperiment = (experimentId) => {
-    setSelectedExperimentId(experimentId);
-    setView('details');
   };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Trading Experiments</h1>
-            <p className="text-slate-600 mt-1">
-              Run autonomous trading bots with different strategies
-            </p>
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="page-header mb-0">
+            <h1 className="page-title">Experiments</h1>
+            <p className="page-subtitle">Run autonomous trading bots with different strategies</p>
           </div>
-          {view === 'details' && (
-            <button
-              onClick={() => {
-                setView('list');
-                setRefreshTrigger(prev => prev + 1);
-              }}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to List
-            </button>
-          )}
+          <button
+            onClick={() => setView(view === 'create' ? 'list' : 'create')}
+            className={view === 'create' ? 'btn-secondary' : 'btn-primary'}
+          >
+            {view === 'create' ? (
+              <>
+                <List className="w-4 h-4" />
+                View List
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                New Experiment
+              </>
+            )}
+          </button>
         </div>
 
-        {/* View Toggle */}
-        {view !== 'details' && (
-          <div className="flex gap-3">
-            <button
-              onClick={() => setView('list')}
-              className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 ${
-                view === 'list'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
-                  : 'bg-white/60 text-slate-700 border border-slate-200 hover:bg-white'
-              }`}
-            >
-              <List className="w-5 h-5" />
-              My Experiments
-            </button>
-            <button
-              onClick={() => setView('create')}
-              className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 ${
-                view === 'create'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
-                  : 'bg-white/60 text-slate-700 border border-slate-200 hover:bg-white'
-              }`}
-            >
-              <Plus className="w-5 h-5" />
-              Create New
-            </button>
-          </div>
-        )}
+        {/* View Toggle Tabs */}
+        <div className="tabs w-fit">
+          <button
+            onClick={() => setView('list')}
+            className={view === 'list' ? 'tab-active' : 'tab'}
+          >
+            <List className="w-4 h-4" />
+            My Experiments
+          </button>
+          <button
+            onClick={() => setView('create')}
+            className={view === 'create' ? 'tab-active' : 'tab'}
+          >
+            <Plus className="w-4 h-4" />
+            Create New
+          </button>
+        </div>
 
         {/* Content */}
         {view === 'list' && (
-          <ExperimentList
-            onSelectExperiment={handleSelectExperiment}
-            refreshTrigger={refreshTrigger}
-          />
+          <ExperimentList refreshTrigger={refreshTrigger} />
         )}
 
         {view === 'create' && (
           <ExperimentCreate onCreated={handleExperimentCreated} />
         )}
 
-        {view === 'details' && selectedExperimentId && (
-          <ExperimentDetails
-            experimentId={selectedExperimentId}
-            onBack={() => {
-              setView('list');
-              setRefreshTrigger(prev => prev + 1);
-            }}
-          />
-        )}
-
-        {/* Info Cards */}
+        {/* Info Section */}
         {view === 'list' && (
-          <>
-            <div className="glass-card p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 shadow-lg">
-                  <FlaskConical className="w-5 h-5 text-white" />
+          <div className="space-y-4">
+            {/* How It Works */}
+            <div className="card-elevated overflow-hidden">
+              <button
+                onClick={() => setShowInfo(!showInfo)}
+                className="w-full p-5 flex items-center justify-between hover:bg-surface-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-brand-50">
+                    <FlaskConical className="w-5 h-5 text-brand-500" />
+                  </div>
+                  <span className="text-heading font-semibold text-content-primary">How Experiments Work</span>
                 </div>
-                <h3 className="text-lg font-bold text-slate-900">How Experiments Work</h3>
-              </div>
-              <div className="grid gap-3 text-sm text-slate-700">
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-50/50">
-                  <DollarSign className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <p>Each bot gets a $100,000 virtual allocation to trade with</p>
+                {showInfo ? (
+                  <ChevronUp className="w-5 h-5 text-content-tertiary" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-content-tertiary" />
+                )}
+              </button>
+              {showInfo && (
+                <div className="px-5 pb-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-brand-50 border border-brand-100">
+                    <DollarSign className="w-5 h-5 text-brand-500 flex-shrink-0" />
+                    <p className="text-caption text-content-secondary">Each bot gets $100,000 virtual allocation</p>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-success-light border border-success/20">
+                    <Zap className="w-5 h-5 text-success flex-shrink-0" />
+                    <p className="text-caption text-content-secondary">Bots run autonomously with assigned strategy</p>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-warning-light border border-warning/20">
+                    <Activity className="w-5 h-5 text-warning flex-shrink-0" />
+                    <p className="text-caption text-content-secondary">All bots trade from your watchlist symbols</p>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-brand-50 border border-brand-100">
+                    <Target className="w-5 h-5 text-brand-500 flex-shrink-0" />
+                    <p className="text-caption text-content-secondary">Compare performance in real-time</p>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-danger-light border border-danger/20">
+                    <Shield className="w-5 h-5 text-danger flex-shrink-0" />
+                    <p className="text-caption text-content-secondary">All trading is simulated - no real money</p>
+                  </div>
                 </div>
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-indigo-50/50">
-                  <Zap className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-                  <p>Bots run autonomously based on their assigned trading strategy</p>
-                </div>
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-purple-50/50">
-                  <Activity className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <p>All bots trade from the same watchlist that you configure</p>
-                </div>
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-50/50">
-                  <Target className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <p>Compare performance in real-time to find the best strategy</p>
-                </div>
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50/50">
-                  <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p>All trading is simulated - no real money is used</p>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Strategy Cards */}
-            <div>
-              <h3 className="text-xl font-bold text-slate-900 mb-4">Available Strategies</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <StrategyCard
-                  title="Volume Spike"
-                  description="Detects abnormal volume spikes and enters positions near support levels, exits at resistance"
-                  gradient="from-blue-500 to-cyan-500"
-                />
-                <StrategyCard
-                  title="Momentum"
-                  description="Uses moving average crossovers to identify trend direction and ride momentum"
-                  gradient="from-emerald-500 to-teal-500"
-                />
-                <StrategyCard
-                  title="Mean Reversion"
-                  description="Buys oversold conditions (RSI < 30) and sells overbought (RSI > 70)"
-                  gradient="from-indigo-500 to-purple-500"
-                />
-                <StrategyCard
-                  title="Breakout"
-                  description="Trades price breakouts above resistance with volume confirmation"
-                  gradient="from-amber-500 to-orange-500"
-                />
-                <StrategyCard
-                  title="Support/Resistance"
-                  description="Enters at support levels and exits at resistance levels"
-                  gradient="from-rose-500 to-pink-500"
-                />
+            <div className="card-elevated p-5">
+              <div className="section-header">
+                <h3 className="section-title flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-brand-500" />
+                  Available Strategies
+                </h3>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {strategies.map((strategy) => (
+                  <div
+                    key={strategy.title}
+                    className="p-4 rounded-lg bg-surface-50 border border-surface-200 hover:border-brand-200 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-brand-500" />
+                      <h4 className="text-body font-semibold text-content-primary">{strategy.title}</h4>
+                    </div>
+                    <p className="text-caption text-content-secondary mb-3">{strategy.description}</p>
+                    <span className={`badge ${
+                      strategy.risk === 'Low' ? 'badge-success' :
+                      strategy.risk === 'Medium' ? 'badge-warning' : 'badge-danger'
+                    }`}>
+                      {strategy.risk} Risk
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
     </DashboardLayout>
-  );
-}
-
-function StrategyCard({ title, description, gradient }) {
-  return (
-    <div className="glass-card p-5 group hover:shadow-xl transition-all duration-300">
-      <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-        <TrendingUp className="w-6 h-6 text-white" />
-      </div>
-      <h4 className="text-slate-900 font-bold mb-2 text-lg">{title}</h4>
-      <p className="text-sm text-slate-600 leading-relaxed">{description}</p>
-    </div>
-  );
-}
-
-function DollarSign({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
   );
 }

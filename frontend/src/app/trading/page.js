@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { TrendingUp, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import OrderForm from '@/components/trading/OrderForm';
 import PositionsTable from '@/components/trading/PositionsTable';
@@ -68,10 +68,10 @@ export default function Trading() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center h-[60vh]">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-            <p className="text-slate-600 font-medium">Loading trading data...</p>
+            <div className="w-10 h-10 border-3 border-brand-200 border-t-brand-500 rounded-full animate-spin" />
+            <p className="text-body text-content-secondary">Loading trading data...</p>
           </div>
         </div>
       </DashboardLayout>
@@ -81,28 +81,30 @@ export default function Trading() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Trading</h1>
-            <p className="text-slate-600 mt-1">
-              Place orders and manage your positions
-            </p>
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="page-header mb-0">
+            <h1 className="page-title">Trading</h1>
+            <p className="page-subtitle">Place orders and manage your positions</p>
           </div>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
 
+        {/* Order Form */}
         <OrderForm onSubmit={handleOrderSubmit} />
 
-        <OpenOrders orders={orders} onCancel={handleCancelOrder} />
+        {/* Positions */}
+        <PositionsTable positions={positions} onSell={loadTradingData} />
 
-        <PositionsTable positions={positions} />
+        {/* Open Orders */}
+        <OpenOrders orders={orders} onCancel={handleCancelOrder} />
       </div>
     </DashboardLayout>
   );

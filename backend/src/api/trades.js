@@ -70,4 +70,27 @@ router.get('/account', authenticateToken, async (req, res) => {
   }
 });
 
+// Adjust portfolio balance (add or reduce cash)
+router.post('/account/adjust-balance', authenticateToken, async (req, res) => {
+  try {
+    const virtualPortfolioService = req.app.locals.virtualPortfolioService;
+    const { amount, type } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+
+    if (!type || !['deposit', 'withdrawal'].includes(type)) {
+      return res.status(400).json({ error: 'Type must be either "deposit" or "withdrawal"' });
+    }
+
+    const account = await virtualPortfolioService.adjustBalance(req.user.userId, amount, type);
+
+    res.json(account);
+  } catch (error) {
+    console.error('Failed to adjust balance:', error);
+    res.status(500).json({ error: error.message || 'Failed to adjust balance' });
+  }
+});
+
 module.exports = router;

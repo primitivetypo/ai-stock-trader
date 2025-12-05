@@ -17,6 +17,23 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
+// Rate limiting middleware
+const {
+  apiLimiter,
+  authLimiter,
+  createUserRateLimiter
+} = require('./src/middleware/rateLimiter');
+
+// Apply general API rate limiting to all routes
+app.use('/api/', apiLimiter);
+
+// Apply user-specific rate limiting (after auth)
+app.use('/api/', createUserRateLimiter());
+
+// Apply strict rate limiting to auth routes
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
 // Import routes
 const authRoutes = require('./src/api/auth');
 const tradesRoutes = require('./src/api/trades');
@@ -24,6 +41,8 @@ const marketRoutes = require('./src/api/market');
 const analyticsRoutes = require('./src/api/analytics');
 const userRoutes = require('./src/api/user');
 const experimentsRoutes = require('./src/api/experiments');
+const strategiesRoutes = require('./src/api/strategies');
+const aiAnalysisRoutes = require('./src/api/aiAnalysis');
 
 // Import services
 const AlpacaService = require('./src/services/alpacaService');
@@ -37,7 +56,7 @@ const alpacaService = new AlpacaService();
 const virtualPortfolioService = new VirtualPortfolioService(alpacaService);
 const volumeEngine = new VolumeDetectionEngine(alpacaService);
 const paperInvestService = new PaperInvestService();
-const tradingBotService = new TradingBotService(virtualPortfolioService, alpacaService);
+const tradingBotService = new TradingBotService(virtualPortfolioService, alpacaService, io);
 
 // Make services available globally
 app.locals.alpacaService = alpacaService;
@@ -54,6 +73,8 @@ app.use('/api/trades', tradesRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/experiments', experimentsRoutes);
+app.use('/api/strategies', strategiesRoutes);
+app.use('/api/ai-analysis', aiAnalysisRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -125,19 +146,42 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4001;
-const HOST = 'localhost'; // Backend should bind to localhost
+// Use 0.0.0.0 for production (Replit), localhost for local development
+const HOST = process.env.HOST || (process.env.REPL_ID ? '0.0.0.0' : 'localhost');
 
 server.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
 
   // Initialize services
-  alpacaService.initialize().then(() => {
+  alpacaService.initialize().then(async () => {
     console.log('Alpaca service initialized');
     volumeEngine.start();
     console.log('Volume detection engine started');
     virtualPortfolioService.startOrderMonitoring();
     console.log('Virtual portfolio service started');
+
+    // Auto-resume running experiments
+    try {
+      const pool = require('./src/db/database');
+      const runningExperiments = await pool.query(
+        "SELECT * FROM experiments WHERE status = 'running' ORDER BY created_at DESC"
+      );
+
+      if (runningExperiments.rows.length > 0) {
+        console.log(`🔄 Found ${runningExperiments.rows.length} running experiment(s), resuming...`);
+        for (const exp of runningExperiments.rows) {
+          try {
+            await tradingBotService.startExperiment(exp.id);
+            console.log(`✅ Resumed experiment: ${exp.name || exp.id}`);
+          } catch (err) {
+            console.error(`❌ Failed to resume experiment ${exp.id}:`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to auto-resume experiments:', err);
+    }
   }).catch(err => {
     console.error('Failed to initialize services:', err);
   });

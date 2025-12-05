@@ -1,67 +1,102 @@
-import { Wallet, DollarSign, TrendingUp, Package } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, DollarSign, PieChart, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 export default function AccountSummary({ accountData, performance }) {
-  if (!accountData || !performance) return null;
+  if (!accountData || !performance) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="metric-card">
+            <div className="skeleton h-4 w-24 mb-3" />
+            <div className="skeleton h-8 w-32 mb-2" />
+            <div className="skeleton h-3 w-20" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
-  const cards = [
+  const portfolioValue = parseFloat(accountData.portfolio_value);
+  const buyingPower = parseFloat(accountData.buying_power);
+  const cash = parseFloat(accountData.cash);
+  const dayReturn = performance.performance.dayReturnPercent;
+  const totalReturn = performance.performance.totalReturnPercent;
+  const positionsCount = performance.positions.count;
+  const positionsValue = performance.positions.totalValue;
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const metrics = [
     {
-      title: 'Portfolio Value',
-      value: `$${parseFloat(accountData.portfolio_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      change: performance.performance.dayReturnPercent,
+      label: 'Portfolio Value',
+      value: formatCurrency(portfolioValue),
+      change: dayReturn,
+      changeLabel: 'today',
       icon: Wallet,
-      gradient: 'from-blue-500 to-cyan-500'
     },
     {
-      title: 'Buying Power',
-      value: `$${parseFloat(accountData.buying_power).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      subtitle: `Cash: $${parseFloat(accountData.cash).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      label: 'Buying Power',
+      value: formatCurrency(buyingPower),
+      subtitle: `Cash: ${formatCurrency(cash)}`,
       icon: DollarSign,
-      gradient: 'from-emerald-500 to-teal-500'
     },
     {
-      title: 'Total Return',
-      value: `${performance.performance.totalReturnPercent >= 0 ? '+' : ''}${performance.performance.totalReturnPercent.toFixed(2)}%`,
-      change: performance.performance.totalReturnPercent,
+      label: 'Total Return',
+      value: `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`,
+      change: totalReturn,
+      changeLabel: 'all time',
       icon: TrendingUp,
-      gradient: 'from-indigo-500 to-purple-500'
+      isPercentValue: true,
     },
     {
-      title: 'Open Positions',
-      value: performance.positions.count.toString(),
-      subtitle: `Value: $${performance.positions.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      icon: Package,
-      gradient: 'from-amber-500 to-orange-500'
-    }
+      label: 'Open Positions',
+      value: positionsCount.toString(),
+      subtitle: `Value: ${formatCurrency(positionsValue)}`,
+      icon: PieChart,
+    },
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      {cards.map((card) => {
-        const Icon = card.icon;
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {metrics.map((metric) => {
+        const Icon = metric.icon;
+        const isPositive = metric.change >= 0;
+
         return (
-          <div
-            key={card.title}
-            className="stats-card group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="stats-label">{card.title}</span>
-              <div className={`p-2.5 rounded-xl bg-gradient-to-br ${card.gradient} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                <Icon className="w-5 h-5 text-white" />
+          <div key={metric.label} className="metric-card group">
+            <div className="flex items-start justify-between mb-3">
+              <span className="metric-label">{metric.label}</span>
+              <div className="p-2 rounded-lg bg-surface-100 text-content-secondary group-hover:bg-brand-50 group-hover:text-brand-500 transition-colors">
+                <Icon className="w-4 h-4" />
               </div>
             </div>
-            <div className="stats-value mb-2">{card.value}</div>
-            {card.change !== undefined && (
-              <div
-                className={`text-sm font-semibold flex items-center gap-1 ${
-                  card.change >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                }`}
-              >
-                <span>{card.change >= 0 ? '↑' : '↓'}</span>
-                <span>{card.change >= 0 ? '+' : ''}{card.change.toFixed(2)}% today</span>
+
+            <div className={`metric-value tabular-nums ${metric.isPercentValue ? (isPositive ? 'text-success' : 'text-danger') : ''}`}>
+              {metric.value}
+            </div>
+
+            {metric.change !== undefined && (
+              <div className={isPositive ? 'metric-change-up' : 'metric-change-down'}>
+                {isPositive ? (
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                ) : (
+                  <ArrowDownRight className="w-3.5 h-3.5" />
+                )}
+                <span className="tabular-nums">
+                  {isPositive ? '+' : ''}{metric.change.toFixed(2)}%
+                </span>
+                <span className="text-content-tertiary font-normal ml-1">{metric.changeLabel}</span>
               </div>
             )}
-            {card.subtitle && (
-              <div className="text-sm text-slate-600 font-medium">{card.subtitle}</div>
+
+            {metric.subtitle && (
+              <p className="text-caption text-content-secondary mt-1">{metric.subtitle}</p>
             )}
           </div>
         );

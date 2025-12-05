@@ -62,8 +62,74 @@ class VirtualPortfolioService extends EventEmitter {
     }
   }
 
+  /**
+   * Validate order parameters before execution
+   * Based on kneadStrategy pattern
+   */
+  validateOrder(orderData) {
+    const { symbol, qty, side, type, limit_price, stop_price } = orderData;
+
+    // Validate required fields
+    if (!symbol || typeof symbol !== 'string') {
+      throw new Error('Valid symbol is required');
+    }
+
+    if (!qty || qty <= 0) {
+      throw new Error('Quantity must be positive');
+    }
+
+    if (!side || !['buy', 'sell'].includes(side.toLowerCase())) {
+      throw new Error('Side must be "buy" or "sell"');
+    }
+
+    if (!type || !['market', 'limit', 'stop', 'stop_limit'].includes(type.toLowerCase())) {
+      throw new Error('Invalid order type');
+    }
+
+    // Type-specific validation (from kneadStrategy)
+    switch (type.toLowerCase()) {
+      case 'market':
+        if (limit_price !== undefined || stop_price !== undefined) {
+          throw new Error('Market orders should not include limit_price or stop_price');
+        }
+        break;
+
+      case 'limit':
+        if (!limit_price || limit_price <= 0) {
+          throw new Error('Limit orders require a positive limit_price');
+        }
+        if (stop_price !== undefined) {
+          throw new Error('Limit orders should not include stop_price');
+        }
+        break;
+
+      case 'stop':
+        if (!stop_price || stop_price <= 0) {
+          throw new Error('Stop orders require a positive stop_price');
+        }
+        if (limit_price !== undefined) {
+          throw new Error('Stop orders should not include limit_price');
+        }
+        break;
+
+      case 'stop_limit':
+        if (!limit_price || limit_price <= 0) {
+          throw new Error('Stop limit orders require a positive limit_price');
+        }
+        if (!stop_price || stop_price <= 0) {
+          throw new Error('Stop limit orders require a positive stop_price');
+        }
+        break;
+    }
+
+    return true;
+  }
+
   // Place virtual order
   async placeOrder(userId, orderData) {
+    // Validate order first
+    this.validateOrder(orderData);
+
     const { symbol, qty, side, type, limit_price, time_in_force } = orderData;
     const client = await pool.connect();
 
@@ -409,13 +475,42 @@ class VirtualPortfolioService extends EventEmitter {
       portfolio_value: portfolioValue.toFixed(2),
       equity: equity.toFixed(2),
       last_equity: lastEquity.toFixed(2),
-      buying_power: (cash * 2).toFixed(2), // 2x for margin
+      buying_power: cash.toFixed(2), // Cash account only
       pattern_day_trader: false,
       trading_blocked: false,
       transfers_blocked: false,
       account_blocked: false,
       created_at: portfolio.created_at
     };
+  }
+
+  // Adjust portfolio balance (deposit or withdrawal)
+  async adjustBalance(userId, amount, type) {
+    const portfolio = await this.getPortfolio(userId);
+    const currentCash = parseFloat(portfolio.cash);
+
+    let newCash;
+    if (type === 'deposit') {
+      newCash = currentCash + parseFloat(amount);
+    } else if (type === 'withdrawal') {
+      newCash = currentCash - parseFloat(amount);
+      if (newCash < 0) {
+        throw new Error('Insufficient funds for withdrawal');
+      }
+    } else {
+      throw new Error('Invalid type. Must be "deposit" or "withdrawal"');
+    }
+
+    // Update cash in portfolio
+    await pool.query(
+      'UPDATE portfolios SET cash = $1 WHERE user_id = $2',
+      [newCash, userId]
+    );
+
+    console.log(`${type} of $${amount} for user ${userId}. New cash: $${newCash}`);
+
+    // Return updated account
+    return await this.getAccount(userId);
   }
 
   // Update position prices without re-fetching
@@ -454,6 +549,113 @@ class VirtualPortfolioService extends EventEmitter {
       }
     } catch (error) {
       console.error('Failed to check pending orders:', error.message);
+    }
+  }
+
+  // ===== Portfolio Allocation for Experiments =====
+
+  /**
+   * Calculate and set allocated cash for all running experiments for a user
+   * Distributes total portfolio cash equally among running experiments
+   */
+  async allocatePortfolioCash(userId) {
+    try {
+      // Get user's total cash
+      const portfolio = await this.getPortfolio(userId);
+      const totalCash = parseFloat(portfolio.cash);
+
+      // Get all running experiments for this user
+      const experimentsResult = await pool.query(
+        `SELECT id FROM experiments WHERE user_id = $1 AND status = 'running'`,
+        [userId]
+      );
+
+      const runningExperiments = experimentsResult.rows;
+
+      if (runningExperiments.length === 0) {
+        return { allocatedPerExperiment: 0, experimentCount: 0 };
+      }
+
+      // Calculate equal allocation
+      const allocatedPerExperiment = totalCash / runningExperiments.length;
+
+      // Update each experiment's allocated cash
+      for (const exp of runningExperiments) {
+        await pool.query(
+          `UPDATE experiments SET allocated_cash = $1 WHERE id = $2`,
+          [allocatedPerExperiment, exp.id]
+        );
+      }
+
+      console.log(`💰 Allocated $${allocatedPerExperiment.toFixed(2)} to each of ${runningExperiments.length} experiments for user ${userId}`);
+
+      return {
+        allocatedPerExperiment,
+        experimentCount: runningExperiments.length,
+        totalCash
+      };
+    } catch (error) {
+      console.error('Failed to allocate portfolio cash:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get experiment allocation info
+   */
+  async getExperimentAllocation(experimentId) {
+    const result = await pool.query(
+      `SELECT allocated_cash, used_cash FROM experiments WHERE id = $1`,
+      [experimentId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const exp = result.rows[0];
+    return {
+      allocatedCash: parseFloat(exp.allocated_cash) || 0,
+      usedCash: parseFloat(exp.used_cash) || 0,
+      availableCash: (parseFloat(exp.allocated_cash) || 0) - (parseFloat(exp.used_cash) || 0)
+    };
+  }
+
+  /**
+   * Check if experiment has enough allocated cash for a trade
+   */
+  async canExperimentTrade(experimentId, tradeValue) {
+    const allocation = await this.getExperimentAllocation(experimentId);
+
+    if (!allocation || !allocation.allocatedCash) {
+      // No allocation set - allow trade (backward compatibility)
+      return true;
+    }
+
+    return allocation.availableCash >= tradeValue;
+  }
+
+  /**
+   * Update used cash for an experiment after a trade
+   */
+  async updateExperimentUsedCash(experimentId, tradeValue, side) {
+    try {
+      if (side === 'buy') {
+        // Increase used cash on buy
+        await pool.query(
+          `UPDATE experiments SET used_cash = COALESCE(used_cash, 0) + $1 WHERE id = $2`,
+          [tradeValue, experimentId]
+        );
+      } else if (side === 'sell') {
+        // Decrease used cash on sell
+        await pool.query(
+          `UPDATE experiments SET used_cash = GREATEST(COALESCE(used_cash, 0) - $1, 0) WHERE id = $2`,
+          [tradeValue, experimentId]
+        );
+      }
+    } catch (error) {
+      console.error('Failed to update experiment used cash:', error);
+      throw error;
     }
   }
 

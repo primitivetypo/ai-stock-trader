@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FlaskConical, RefreshCw } from 'lucide-react';
+import { RefreshCw, TrendingUp, FlaskConical } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import AccountSummary from '@/components/dashboard/AccountSummary';
 import MarketWatch from '@/components/dashboard/MarketWatch';
@@ -11,6 +11,7 @@ import RecentTrades from '@/components/dashboard/RecentTrades';
 import PerformanceChart from '@/components/dashboard/PerformanceChart';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 import api from '@/lib/api';
+import Link from 'next/link';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -77,10 +78,10 @@ export default function Dashboard() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center h-[60vh]">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-            <p className="text-slate-600 font-medium">Loading dashboard...</p>
+            <div className="w-10 h-10 border-3 border-brand-200 border-t-brand-500 rounded-full animate-spin" />
+            <p className="text-body text-content-secondary">Loading dashboard...</p>
           </div>
         </div>
       </DashboardLayout>
@@ -90,44 +91,39 @@ export default function Dashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Dashboard</h1>
-            <p className="text-slate-600 mt-1">
-              Real-time market monitoring and trading overview
-            </p>
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="page-header mb-0">
+            <h1 className="page-title">Dashboard</h1>
+            <p className="page-subtitle">Real-time market monitoring and trading overview</p>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="btn-secondary flex items-center gap-2"
+              className="btn-secondary"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            <button
-              onClick={() => router.push('/experiments')}
-              className="btn-primary flex items-center gap-2"
-            >
-              <FlaskConical className="w-5 h-5" />
-              <span className="hidden sm:inline">Trading</span> Experiments
-            </button>
+            <Link href="/experiments" className="btn-primary">
+              <FlaskConical className="w-4 h-4" />
+              <span className="hidden sm:inline">Start</span> Experiment
+            </Link>
           </div>
         </div>
 
-        {/* Account Summary */}
+        {/* Account Summary Metrics */}
         <AccountSummary accountData={accountData} performance={performance} />
-
-        {/* Main Grid */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          <VolumeAlerts alerts={volumeAlerts} />
-          <MarketWatch />
-        </div>
 
         {/* Performance Chart */}
         <PerformanceChart />
+
+        {/* Market Watch & Volume Alerts Grid */}
+        <div className="grid lg:grid-cols-2 gap-6">
+          <MarketWatch />
+          <VolumeAlerts alerts={volumeAlerts} />
+        </div>
 
         {/* Recent Trades */}
         <RecentTrades trades={recentTrades} />
